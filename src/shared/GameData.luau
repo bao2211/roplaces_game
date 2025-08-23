@@ -13,6 +13,7 @@ export type GameInfo = {
 	last_updated: string, -- Last update timestamp
 	server_down: number, -- Server status (0 = up, 1 = down, etc.)
 	image_url: string?, -- Optional image URL
+	description: string?, -- Optional game description
 }
 
 -- Example game data structure
@@ -25,6 +26,7 @@ GameData.ExampleData = {
 	last_updated = "08/21/2025, 20:3",
 	server_down = 3,
 	image_url = "https://example.com/image.png",
+	description = "Experience amazing adventures in the TRLX gaming universe with friends and explore countless worlds.",
 }
 
 -- Function to validate game data

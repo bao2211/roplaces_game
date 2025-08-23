@@ -87,17 +87,17 @@ local function updateServerDownCount(partKey)
 	local success, result = pcall(function()
 		local requestData = {
 			action = "update_server_down",
-			part_key = partKey
+			part_key = partKey,
 		}
-		
+
 		local response = HttpService:PostAsync(
-			Config.GOOGLE_SCRIPT_URL, 
+			Config.GOOGLE_SCRIPT_URL,
 			HttpService:JSONEncode(requestData),
 			Enum.HttpContentType.ApplicationJson
 		)
 		return HttpService:JSONDecode(response)
 	end)
-	
+
 	if success then
 		Config.debugLog("Updated server_down count for: " .. partKey)
 	else
@@ -113,7 +113,7 @@ local function checkPlaceValidity(placeId)
 		local productInfo = MarketplaceService:GetProductInfo(placeId, Enum.InfoType.Asset)
 		return productInfo ~= nil and productInfo.Name ~= nil
 	end)
-	
+
 	return success and result
 end
 
@@ -164,6 +164,7 @@ local function onPartTouched(hit, part)
 			last_updated = gameData.last_updated,
 			server_down = gameData.server_down,
 			image_url = gameData.image_url and GameData.sanitizeUrl(gameData.image_url) or nil,
+			description = gameData.description or "",
 		}
 
 		-- Send game data to client to show GUI
@@ -199,7 +200,11 @@ local function onTeleportPlayer(player, tpUrl, partKey)
 			local isPlaceValid = checkPlaceValidity(placeId)
 			if not isPlaceValid then
 				Config.debugLog("Place " .. placeId .. " appears to be invalid or removed")
-				teleportFailedRemote:FireClient(player, "This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.", partKey)
+				teleportFailedRemote:FireClient(
+					player,
+					"This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.",
+					partKey
+				)
 				updateServerDownCount(partKey)
 				return
 			end
@@ -213,9 +218,15 @@ local function onTeleportPlayer(player, tpUrl, partKey)
 			if not success then
 				warn("Failed to teleport player " .. player.Name .. ": " .. errorMessage)
 				-- Check if error indicates the game is removed/private
-				if string.find(errorMessage:lower(), "place") and 
-				   (string.find(errorMessage:lower(), "not") or string.find(errorMessage:lower(), "invalid")) then
-					teleportFailedRemote:FireClient(player, "This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.", partKey)
+				if
+					string.find(errorMessage:lower(), "place")
+					and (string.find(errorMessage:lower(), "not") or string.find(errorMessage:lower(), "invalid"))
+				then
+					teleportFailedRemote:FireClient(
+						player,
+						"This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.",
+						partKey
+					)
 					updateServerDownCount(partKey)
 				else
 					teleportFailedRemote:FireClient(player, "Failed to join game: " .. errorMessage, partKey)

@@ -288,14 +288,14 @@ function createSampleData() {
   sheet.clear();
   
   // Add headers
-  const headers = ['Part Key', 'TP-URL', 'DC-URL', 'Title', 'Active', 'Last Updated', 'Server Down', 'Image URL'];
+  const headers = ['Part Key', 'TP-URL', 'DC-URL', 'Title', 'Active', 'Last Updated', 'Server Down', 'Image URL', 'Description'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   
   // Add sample data
   const sampleData = [
-    ['trlx_tp', 'https://www.roblox.com/games/123456789', 'https://discord.gg/trlx', 'TRLX Games', true, new Date(), 3, 'https://example.com/trlx.png'],
-    ['hub_tp', 'https://www.roblox.com/games/987654321', 'https://discord.gg/hub', 'Gaming Hub', true, new Date(), 0, 'https://example.com/hub.png'],
-    ['test_tp', 'https://www.roblox.com/games/555666777', 'https://discord.gg/test', 'Test Server', false, new Date(), 1, '']
+    ['trlx_tp', 'https://www.roblox.com/games/123456789', 'https://discord.gg/trlx', 'TRLX Games', true, new Date(), 3, 'https://example.com/trlx.png', 'Experience amazing adventures in the TRLX gaming universe with friends and explore countless worlds.'],
+    ['hub_tp', 'https://www.roblox.com/games/987654321', 'https://discord.gg/hub', 'Gaming Hub', true, new Date(), 0, 'https://example.com/hub.png', 'The central hub for all gaming activities. Meet other players and discover new games together.'],
+    ['test_tp', 'https://www.roblox.com/games/555666777', 'https://discord.gg/test', 'Test Server', false, new Date(), 1, '', 'This is a test server for development and debugging purposes. Join to help test new features!']
   ];
   
   sheet.getRange(2, 1, sampleData.length, sampleData[0].length).setValues(sampleData);
