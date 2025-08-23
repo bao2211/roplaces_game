@@ -32,6 +32,7 @@ local lastCacheUpdate = 0
 
 -- Cooldown system to prevent multiple GUI shows
 local playerCooldowns = {} -- Track cooldowns per player
+local playersOnParts = {} -- Track which players are currently on teleport parts
 local COOLDOWN_DURATION = 3 -- seconds before player can trigger GUI again
 
 -- Function to fetch game data from Google Sheets
@@ -152,13 +153,6 @@ local function onPartTouched(hit, part)
 		return
 	end
 
-	-- Check cooldown to prevent multiple GUI shows
-	local currentTime = tick()
-	local playerKey = player.UserId
-	if playerCooldowns[playerKey] and currentTime - playerCooldowns[playerKey] < COOLDOWN_DURATION then
-		return -- Player is still in cooldown
-	end
-
 	local partType = part:GetAttribute("part_type")
 	if not partType or not string.find(partType, Config.PART_TYPE_KEYWORD) then
 		return
@@ -170,6 +164,23 @@ local function onPartTouched(hit, part)
 		return
 	end
 
+	-- Check if player is already on this specific part to prevent duplicate triggers
+	local playerKey = player.UserId
+	local partPlayerKey = playerKey .. "_" .. partKey
+	
+	if playersOnParts[partPlayerKey] then
+		-- Player is already on this part, don't retrigger
+		return
+	end
+
+	-- Check global cooldown to prevent rapid switching between parts
+	local currentTime = tick()
+	if playerCooldowns[playerKey] and currentTime - playerCooldowns[playerKey] < COOLDOWN_DURATION then
+		return -- Player is still in cooldown
+	end
+
+	-- Mark player as on this part
+	playersOnParts[partPlayerKey] = currentTime
 	-- Set cooldown for this player
 	playerCooldowns[playerKey] = currentTime
 
@@ -304,6 +315,27 @@ local function setupTeleportParts()
 						child.Touched:Connect(function(hit)
 							onPartTouched(hit, child)
 						end)
+						
+						-- Connect touch ended event to track when players leave
+						child.TouchEnded:Connect(function(hit)
+							local humanoid = hit.Parent:FindFirstChild("Humanoid")
+							if not humanoid then
+								return
+							end
+							
+							local player = Players:GetPlayerFromCharacter(hit.Parent)
+							if not player then
+								return
+							end
+							
+							local partKey = child:GetAttribute("part_key")
+							if partKey then
+								local playerKey = player.UserId
+								local partPlayerKey = playerKey .. "_" .. partKey
+								playersOnParts[partPlayerKey] = nil -- Remove player from this part
+								Config.debugLog("Player " .. player.Name .. " left teleport part: " .. partKey)
+							end
+						end)
 						Config.debugLog(
 							"Setup teleport part: "
 								.. child.Name
@@ -337,6 +369,25 @@ workspace.DescendantAdded:Connect(function(descendant)
 				descendant.Touched:Connect(function(hit)
 					onPartTouched(hit, descendant)
 				end)
+				
+				-- Connect touch ended event for dynamically added parts
+				descendant.TouchEnded:Connect(function(hit)
+					local humanoid = hit.Parent:FindFirstChild("Humanoid")
+					if not humanoid then
+						return
+					end
+					
+					local player = Players:GetPlayerFromCharacter(hit.Parent)
+					if not player then
+						return
+					end
+					
+					local playerKey = player.UserId
+					local partPlayerKey = playerKey .. "_" .. partKey
+					playersOnParts[partPlayerKey] = nil -- Remove player from this part
+					Config.debugLog("Player " .. player.Name .. " left teleport part: " .. partKey)
+				end)
+				
 				Config.debugLog("Setup new teleport part: " .. descendant.Name .. " (key: " .. partKey .. ")")
 			else
 				warn("New teleport part " .. descendant.Name .. " missing part_key attribute")
@@ -353,7 +404,16 @@ end)
 -- Clean up cooldowns when players leave
 Players.PlayerRemoving:Connect(function(player)
 	playerCooldowns[player.UserId] = nil
-	Config.debugLog("Cleaned up cooldown data for player: " .. player.Name)
+	
+	-- Clean up all part tracking for this player
+	local playerKey = player.UserId
+	for key, _ in pairs(playersOnParts) do
+		if string.find(key, "^" .. playerKey .. "_") then
+			playersOnParts[key] = nil
+		end
+	end
+	
+	Config.debugLog("Cleaned up cooldown and part tracking data for player: " .. player.Name)
 end)
 
 -- Initialize game data cache
