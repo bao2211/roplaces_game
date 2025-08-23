@@ -106,6 +106,8 @@ function doPost(e) {
         return addGameData(requestData);
       case 'get_game':
         return getSpecificGame(requestData.part_key);
+      case 'update_server_down':
+        return updateServerDown(requestData.part_key);
       default:
         throw new Error('Invalid action: ' + action);
     }
@@ -191,6 +193,57 @@ function addGameData(requestData) {
     .createTextOutput(JSON.stringify({
       success: true,
       message: 'Game data added successfully'
+    }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Update server_down count for a specific game
+ */
+function updateServerDown(partKey) {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  // Find the row with matching part_key
+  let rowIndex = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === partKey) { // Assuming part_key is in first column
+      rowIndex = i + 1; // Sheet rows are 1-indexed
+      break;
+    }
+  }
+  
+  if (rowIndex === -1) {
+    throw new Error('Game with part_key "' + partKey + '" not found');
+  }
+  
+  // Find server_down column index
+  const serverDownIndex = headers.findIndex(h => h.toString().toLowerCase().includes('server') && h.toString().toLowerCase().includes('down'));
+  if (serverDownIndex === -1) {
+    throw new Error('Server Down column not found');
+  }
+  
+  // Get current server_down value and increment it
+  const currentValue = Number(data[rowIndex - 1][serverDownIndex]) || 0;
+  const newValue = currentValue + 1;
+  
+  // Update the cell
+  sheet.getRange(rowIndex, serverDownIndex + 1).setValue(newValue);
+  
+  // Update last_updated timestamp
+  const lastUpdatedIndex = headers.findIndex(h => h.toString().toLowerCase().includes('updated'));
+  if (lastUpdatedIndex !== -1) {
+    sheet.getRange(rowIndex, lastUpdatedIndex + 1).setValue(new Date());
+  }
+  
+  console.log('Updated server_down count for ' + partKey + ' to ' + newValue);
+  
+  return ContentService
+    .createTextOutput(JSON.stringify({
+      success: true,
+      message: 'Server down count updated successfully',
+      new_count: newValue
     }))
     .setMimeType(ContentService.MimeType.JSON);
 }

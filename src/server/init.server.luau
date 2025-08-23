@@ -22,6 +22,10 @@ local teleportPlayerRemote = Instance.new("RemoteEvent")
 teleportPlayerRemote.Name = "TeleportPlayer"
 teleportPlayerRemote.Parent = remoteEvents
 
+local teleportFailedRemote = Instance.new("RemoteEvent")
+teleportFailedRemote.Name = "TeleportFailed"
+teleportFailedRemote.Parent = remoteEvents
+
 -- Cache for game data
 local gameDataCache = {}
 local lastCacheUpdate = 0
@@ -76,6 +80,41 @@ local function findGameDataByKey(partKey)
 		end
 	end
 	return nil
+end
+
+-- Function to update server_down count for invalid games
+local function updateServerDownCount(partKey)
+	local success, result = pcall(function()
+		local requestData = {
+			action = "update_server_down",
+			part_key = partKey
+		}
+		
+		local response = HttpService:PostAsync(
+			Config.GOOGLE_SCRIPT_URL, 
+			HttpService:JSONEncode(requestData),
+			Enum.HttpContentType.ApplicationJson
+		)
+		return HttpService:JSONDecode(response)
+	end)
+	
+	if success then
+		Config.debugLog("Updated server_down count for: " .. partKey)
+	else
+		warn("Failed to update server_down count for: " .. partKey)
+	end
+end
+
+-- Function to check if a place exists and is accessible
+local function checkPlaceValidity(placeId)
+	local success, result = pcall(function()
+		-- Try to get place info using MarketplaceService
+		local MarketplaceService = game:GetService("MarketplaceService")
+		local productInfo = MarketplaceService:GetProductInfo(placeId, Enum.InfoType.Asset)
+		return productInfo ~= nil and productInfo.Name ~= nil
+	end)
+	
+	return success and result
 end
 
 -- Function to handle part touched
@@ -136,13 +175,14 @@ local function onPartTouched(hit, part)
 end
 
 -- Function to handle teleportation
-local function onTeleportPlayer(player, tpUrl)
+local function onTeleportPlayer(player, tpUrl, partKey)
 	Config.debugLog("Teleport request from " .. player.Name .. " to: " .. tostring(tpUrl))
 
 	-- Validate the URL
 	local isValid, message = Config.validateTeleportUrl(tpUrl)
 	if not isValid then
 		warn("Invalid teleport URL for player " .. player.Name .. ": " .. message)
+		teleportFailedRemote:FireClient(player, "Invalid game link", partKey)
 		return
 	end
 
@@ -155,6 +195,15 @@ local function onTeleportPlayer(player, tpUrl)
 	if placeId then
 		placeId = tonumber(placeId)
 		if placeId then
+			-- Check if the place is valid before attempting teleport
+			local isPlaceValid = checkPlaceValidity(placeId)
+			if not isPlaceValid then
+				Config.debugLog("Place " .. placeId .. " appears to be invalid or removed")
+				teleportFailedRemote:FireClient(player, "This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.", partKey)
+				updateServerDownCount(partKey)
+				return
+			end
+
 			Config.debugLog("Attempting to teleport " .. player.Name .. " to place ID: " .. placeId)
 
 			local success, errorMessage = pcall(function()
@@ -163,14 +212,24 @@ local function onTeleportPlayer(player, tpUrl)
 
 			if not success then
 				warn("Failed to teleport player " .. player.Name .. ": " .. errorMessage)
+				-- Check if error indicates the game is removed/private
+				if string.find(errorMessage:lower(), "place") and 
+				   (string.find(errorMessage:lower(), "not") or string.find(errorMessage:lower(), "invalid")) then
+					teleportFailedRemote:FireClient(player, "This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.", partKey)
+					updateServerDownCount(partKey)
+				else
+					teleportFailedRemote:FireClient(player, "Failed to join game: " .. errorMessage, partKey)
+				end
 			else
 				Config.debugLog("Successfully initiated teleport for " .. player.Name)
 			end
 		else
 			warn("Invalid place ID extracted from URL: " .. tpUrl)
+			teleportFailedRemote:FireClient(player, "Invalid game link format", partKey)
 		end
 	else
 		warn("Could not extract place ID from URL: " .. tpUrl)
+		teleportFailedRemote:FireClient(player, "Could not extract game ID from link", partKey)
 	end
 end
 
@@ -238,7 +297,9 @@ workspace.DescendantAdded:Connect(function(descendant)
 end)
 
 -- Connect remote events
-teleportPlayerRemote.OnServerEvent:Connect(onTeleportPlayer)
+teleportPlayerRemote.OnServerEvent:Connect(function(player, tpUrl, partKey)
+	onTeleportPlayer(player, tpUrl, partKey)
+end)
 
 -- Clean up cooldowns when players leave
 Players.PlayerRemoving:Connect(function(player)

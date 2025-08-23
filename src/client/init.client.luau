@@ -11,11 +11,73 @@ local playerGui = player:WaitForChild("PlayerGui")
 local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local showTpGuiRemote = remoteEvents:WaitForChild("ShowTpGui")
 local teleportPlayerRemote = remoteEvents:WaitForChild("TeleportPlayer")
+local teleportFailedRemote = remoteEvents:WaitForChild("TeleportFailed")
 
 -- GUI variables
 local teleportGui = nil
 local lastGuiShow = 0
 local CLIENT_COOLDOWN = 2 -- seconds between GUI shows on client
+local currentGameData = nil -- Store current game data for error handling
+
+-- Function to show error message
+local function showErrorMessage(message)
+	-- Create error notification
+	local errorGui = Instance.new("ScreenGui")
+	errorGui.Name = "ErrorNotification"
+	errorGui.Parent = playerGui
+	
+	local errorFrame = Instance.new("Frame")
+	errorFrame.Size = UDim2.fromOffset(400, 120)
+	errorFrame.Position = UDim2.new(0.5, -200, 0, -150)
+	errorFrame.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+	errorFrame.BorderSizePixel = 0
+	errorFrame.Parent = errorGui
+	
+	local errorCorner = Instance.new("UICorner")
+	errorCorner.CornerRadius = UDim.new(0, 12)
+	errorCorner.Parent = errorFrame
+	
+	local errorTitle = Instance.new("TextLabel")
+	errorTitle.Size = UDim2.new(1, -20, 0, 30)
+	errorTitle.Position = UDim2.fromOffset(10, 10)
+	errorTitle.BackgroundTransparency = 1
+	errorTitle.Text = "⚠️ Teleport Failed"
+	errorTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	errorTitle.TextScaled = true
+	errorTitle.TextXAlignment = Enum.TextXAlignment.Left
+	errorTitle.Font = Enum.Font.GothamBold
+	errorTitle.Parent = errorFrame
+	
+	local errorText = Instance.new("TextLabel")
+	errorText.Size = UDim2.new(1, -20, 0, 60)
+	errorText.Position = UDim2.fromOffset(10, 45)
+	errorText.BackgroundTransparency = 1
+	errorText.Text = message
+	errorText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	errorText.TextScaled = true
+	errorText.TextXAlignment = Enum.TextXAlignment.Left
+	errorText.TextYAlignment = Enum.TextYAlignment.Top
+	errorText.TextWrapped = true
+	errorText.Font = Enum.Font.Gotham
+	errorText.Parent = errorFrame
+	
+	-- Animate in
+	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	local tween = TweenService:Create(errorFrame, tweenInfo, {
+		Position = UDim2.new(0.5, -200, 0, 20)
+	})
+	tween:Play()
+	
+	-- Auto-hide after 5 seconds
+	wait(5)
+	local tweenOut = TweenService:Create(errorFrame, tweenInfo, {
+		Position = UDim2.new(0.5, -200, 0, -150)
+	})
+	tweenOut:Play()
+	tweenOut.Completed:Connect(function()
+		errorGui:Destroy()
+	end)
+end
 
 -- Function to create the teleport GUI
 local function createTeleportGui()
@@ -186,6 +248,7 @@ local function showTeleportGui(gameData)
 	local closeButton = backgroundFrame.CloseButton
 
 	-- Set game data
+	currentGameData = gameData -- Store for error handling
 	gameTitleLabel.Text = gameData.title or "Unknown Game"
 	discordTextBox.Text = gameData.dc_url or ""
 
@@ -200,7 +263,7 @@ local function showTeleportGui(gameData)
 	-- Button functionality
 	joinButton.MouseButton1Click:Connect(function()
 		if gameData.tp_url and gameData.tp_url ~= "" then
-			teleportPlayerRemote:FireServer(gameData.tp_url)
+			teleportPlayerRemote:FireServer(gameData.tp_url, gameData.part_key)
 			teleportGui:Destroy()
 			teleportGui = nil
 		end
@@ -233,5 +296,19 @@ end
 
 -- Connect to server events
 showTpGuiRemote.OnClientEvent:Connect(showTeleportGui)
+
+-- Handle teleport failures
+teleportFailedRemote.OnClientEvent:Connect(function(errorMessage, partKey)
+	-- Show error message to player
+	spawn(function()
+		showErrorMessage(errorMessage)
+	end)
+	
+	-- Close teleport GUI if it's open
+	if teleportGui then
+		teleportGui:Destroy()
+		teleportGui = nil
+	end
+end)
 
 print("Teleportation client system loaded!")
