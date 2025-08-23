@@ -1,49 +1,61 @@
--- Client script for teleportation GUI
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
+-- Teleportation Client Script
 local TweenService = game:GetService("TweenService")
-local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Mobile detection
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-
--- GUI dimensions based on device type
-local GUI_DIMENSIONS = {
-	-- Desktop dimensions
-	DESKTOP = {
-		width = 750,
-		height = 400,
-		imageHeight = 160,
-		descriptionHeight = 200
-	},
-	-- Mobile dimensions (smaller and more compact)
-	MOBILE = {
-		width = 350,
-		height = 280,
-		imageHeight = 100,
-		descriptionHeight = 120
-	}
-}
-
-local currentDimensions = isMobile and GUI_DIMENSIONS.MOBILE or GUI_DIMENSIONS.DESKTOP
-
--- Wait for RemoteEvents
-local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+-- Get remote events
+local remoteEvents = game.ReplicatedStorage:WaitForChild("RemoteEvents")
 local showTpGuiRemote = remoteEvents:WaitForChild("ShowTpGui")
 local teleportPlayerRemote = remoteEvents:WaitForChild("TeleportPlayer")
 local teleportFailedRemote = remoteEvents:WaitForChild("TeleportFailed")
 
--- GUI variables
-local teleportGui = nil
-local lastGuiShow = 0
-local CLIENT_COOLDOWN = 2 -- seconds between GUI shows on client
-local currentGameData = nil -- Store current game data for error handling
+print("[TP Client Debug] RemoteEvents found successfully")
+print("[TP Client Debug] ShowTpGui:", showTpGuiRemote)
+print("[TP Client Debug] TeleportPlayer:", teleportPlayerRemote)
+print("[TP Client Debug] TeleportFailed:", teleportFailedRemote)
 
--- Function to show error message
+-- Variables
+local teleportGui = nil
+local currentTeleportData = nil
+
+-- Mobile detection
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- Responsive dimensions
+local function getResponsiveDimensions()
+	local screenSize = workspace.CurrentCamera.ViewportSize
+
+	if isMobile then
+		-- Mobile dimensions (smaller and more compact)
+		return {
+			width = math.min(screenSize.X * 0.95, 420),
+			height = math.min(screenSize.Y * 0.8, 500),
+			imageSize = 120,
+			padding = 8,
+			titleSize = 18,
+			textSize = 14,
+			buttonHeight = 40,
+			sidebarWidth = 140,
+		}
+	else
+		-- Desktop dimensions
+		return {
+			width = 600,
+			height = 550,
+			imageSize = 150,
+			padding = 15,
+			titleSize = 22,
+			textSize = 16,
+			buttonHeight = 50,
+			sidebarWidth = 200,
+		}
+	end
+end
+
+-- Function to show error messages
 local function showErrorMessage(message)
 	-- Create error notification
 	local errorGui = Instance.new("ScreenGui")
@@ -105,148 +117,46 @@ end
 
 -- Function to create the teleport GUI
 local function createTeleportGui()
-	-- Main ScreenGui
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "TeleportGui"
-	screenGui.ResetOnSpawn = false
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	-- Destroy existing GUI if any
+	if teleportGui then
+		teleportGui:Destroy()
+	end
 
-	-- Background frame (wider to accommodate sidebar)
+	-- Get responsive dimensions
+	local currentDimensions = getResponsiveDimensions()
+
+	-- Create main GUI
+	teleportGui = Instance.new("ScreenGui")
+	teleportGui.Name = "TeleportGui"
+	teleportGui.Parent = playerGui
+
+	-- Main frame (background)
 	local backgroundFrame = Instance.new("Frame")
-	backgroundFrame.Name = "Background"
+	backgroundFrame.Name = "BackgroundFrame"
 	backgroundFrame.Size = UDim2.fromOffset(currentDimensions.width, currentDimensions.height)
-	backgroundFrame.Position = UDim2.new(0.5, -currentDimensions.width/2, 0.5, -currentDimensions.height/2)
-	backgroundFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	backgroundFrame.Position = UDim2.new(0.5, -currentDimensions.width / 2, 1, 0) -- Start off-screen
+	backgroundFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
 	backgroundFrame.BorderSizePixel = 0
-	backgroundFrame.Parent = screenGui
+	backgroundFrame.Parent = teleportGui
 
-	-- Add rounded corners
+	-- Rounded corners
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 12)
+	corner.CornerRadius = UDim.new(0, 15)
 	corner.Parent = backgroundFrame
 
-	-- Add shadow effect
+	-- Drop shadow
 	local shadow = Instance.new("Frame")
 	shadow.Name = "Shadow"
-	shadow.Size = UDim2.new(1, 10, 1, 10)
-	shadow.Position = UDim2.fromOffset(-5, -5)
+	shadow.Size = UDim2.new(1, 6, 1, 6)
+	shadow.Position = UDim2.fromOffset(-3, -3)
 	shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	shadow.BackgroundTransparency = 0.8
 	shadow.ZIndex = backgroundFrame.ZIndex - 1
 	shadow.Parent = backgroundFrame
 
 	local shadowCorner = Instance.new("UICorner")
-	shadowCorner.CornerRadius = UDim.new(0, 12)
+	shadowCorner.CornerRadius = UDim.new(0, 15)
 	shadowCorner.Parent = shadow
-
-	-- Main content frame (left side)
-	local mainContent = Instance.new("Frame")
-	mainContent.Name = "MainContent"
-	mainContent.Size = UDim2.new(0.6, -10, 1, -20)
-	mainContent.Position = UDim2.fromOffset(10, 10)
-	mainContent.BackgroundTransparency = 1
-	mainContent.Parent = backgroundFrame
-
-	-- Sidebar frame (right side)
-	local sidebar = Instance.new("Frame")
-	sidebar.Name = "Sidebar"
-	sidebar.Size = UDim2.new(0.4, -10, 1, -20)
-	sidebar.Position = UDim2.new(0.6, 5, 0, 10)
-	sidebar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	sidebar.BorderSizePixel = 0
-	sidebar.Parent = backgroundFrame
-
-	local sidebarCorner = Instance.new("UICorner")
-	sidebarCorner.CornerRadius = UDim.new(0, 8)
-	sidebarCorner.Parent = sidebar
-
-	-- Title
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "Title"
-	titleLabel.Size = UDim2.new(1, -20, 0, isMobile and 30 or 40)
-	titleLabel.Position = UDim2.fromOffset(10, 10)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = "Game Information"
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.TextScaled = true
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.Parent = mainContent
-
-	-- Game title
-	local gameTitleLabel = Instance.new("TextLabel")
-	gameTitleLabel.Name = "GameTitle"
-	gameTitleLabel.Size = UDim2.new(1, -20, 0, isMobile and 25 or 30)
-	gameTitleLabel.Position = UDim2.fromOffset(10, isMobile and 45 or 60)
-	gameTitleLabel.BackgroundTransparency = 1
-	gameTitleLabel.Text = "Game Title"
-	gameTitleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-	gameTitleLabel.TextScaled = true
-	gameTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	gameTitleLabel.Font = Enum.Font.Gotham
-	gameTitleLabel.Parent = mainContent
-
-	-- Discord URL label
-	local discordLabel = Instance.new("TextLabel")
-	discordLabel.Name = "DiscordLabel"
-	discordLabel.Size = UDim2.new(1, -20, 0, isMobile and 15 or 20)
-	discordLabel.Position = UDim2.fromOffset(10, isMobile and 75 or 100)
-	discordLabel.BackgroundTransparency = 1
-	discordLabel.Text = "Discord Server:"
-	discordLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-	discordLabel.TextScaled = true
-	discordLabel.TextXAlignment = Enum.TextXAlignment.Left
-	discordLabel.Font = Enum.Font.Gotham
-	discordLabel.Parent = mainContent
-
-	-- Discord URL text box (for copying)
-	local discordTextBox = Instance.new("TextBox")
-	discordTextBox.Name = "DiscordUrl"
-	discordTextBox.Size = UDim2.new(1, -20, 0, isMobile and 25 or 30)
-	discordTextBox.Position = UDim2.fromOffset(10, isMobile and 95 or 125)
-	discordTextBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	discordTextBox.BorderSizePixel = 0
-	discordTextBox.Text = ""
-	discordTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-	discordTextBox.TextScaled = true
-	discordTextBox.TextXAlignment = Enum.TextXAlignment.Left
-	discordTextBox.Font = Enum.Font.Gotham
-	discordTextBox.ClearTextOnFocus = false
-	discordTextBox.Parent = mainContent
-
-	local discordCorner = Instance.new("UICorner")
-	discordCorner.CornerRadius = UDim.new(0, 6)
-	discordCorner.Parent = discordTextBox
-
-	-- Copy instruction note
-	local copyNote = Instance.new("TextLabel")
-	copyNote.Name = "CopyNote"
-	copyNote.Size = UDim2.new(1, -20, 0, isMobile and 12 or 15)
-	copyNote.Position = UDim2.fromOffset(10, isMobile and 125 or 160)
-	copyNote.BackgroundTransparency = 1
-	copyNote.Text = isMobile and "💡 Tap above to copy Discord link" or "💡 Select the text above to copy and join the communication channel"
-	copyNote.TextColor3 = Color3.fromRGB(150, 150, 150)
-	copyNote.TextScaled = true
-	copyNote.TextXAlignment = Enum.TextXAlignment.Left
-	copyNote.Font = Enum.Font.Gotham
-	copyNote.Parent = mainContent
-
-	-- Join button
-	local joinButton = Instance.new("TextButton")
-	joinButton.Name = "JoinButton"
-	joinButton.Size = UDim2.new(1, -20, 0, isMobile and 35 or 40)
-	joinButton.Position = UDim2.fromOffset(10, isMobile and 142 or 185)
-	joinButton.BackgroundColor3 = Color3.fromRGB(67, 181, 129)
-	joinButton.BorderSizePixel = 0
-	joinButton.Text = "Join Game"
-	joinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	joinButton.TextScaled = true
-	joinButton.Font = Enum.Font.GothamBold
-	joinButton.Parent = mainContent
-
-	local joinCorner = Instance.new("UICorner")
-	joinCorner.CornerRadius = UDim.new(0, 8)
-	joinCorner.Parent = joinButton
 
 	-- Close button
 	local closeButton = Instance.new("TextButton")
@@ -255,172 +165,447 @@ local function createTeleportGui()
 	closeButton.Position = UDim2.new(1, -40, 0, 10)
 	closeButton.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
 	closeButton.BorderSizePixel = 0
-	closeButton.Text = "×"
+	closeButton.Text = "X"
 	closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	closeButton.TextScaled = true
+	closeButton.TextSize = 16
 	closeButton.Font = Enum.Font.GothamBold
 	closeButton.Parent = backgroundFrame
 
 	local closeCorner = Instance.new("UICorner")
-	closeCorner.CornerRadius = UDim.new(0, 15)
+	closeCorner.CornerRadius = UDim.new(0, 6)
 	closeCorner.Parent = closeButton
 
-	-- Sidebar image display
-	local gameImage = Instance.new("ImageLabel")
-	gameImage.Name = "GameImage"
-	gameImage.Size = UDim2.new(1, -20, 0, currentDimensions.imageHeight)
-	gameImage.Position = UDim2.fromOffset(10, 10)
-	gameImage.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-	gameImage.BorderSizePixel = 0
-	gameImage.Image = ""
-	gameImage.ScaleType = Enum.ScaleType.Crop
-	gameImage.Parent = sidebar
-
-	local imageCorner = Instance.new("UICorner")
-	imageCorner.CornerRadius = UDim.new(0, 8)
-	imageCorner.Parent = gameImage
-
-	-- Description scroll frame for mobile, regular label for desktop
-	local descriptionContainer
-	local descriptionLabel
-	
-	if isMobile then
-		-- Create scrolling frame for mobile
-		descriptionContainer = Instance.new("ScrollingFrame")
-		descriptionContainer.Name = "DescriptionContainer"
-		descriptionContainer.Size = UDim2.new(1, -20, 0, currentDimensions.descriptionHeight)
-		descriptionContainer.Position = UDim2.fromOffset(10, currentDimensions.imageHeight + 20)
-		descriptionContainer.BackgroundTransparency = 1
-		descriptionContainer.BorderSizePixel = 0
-		descriptionContainer.ScrollBarThickness = 4
-		descriptionContainer.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-		descriptionContainer.CanvasSize = UDim2.new(0, 0, 0, 0) -- Will be set dynamically
-		descriptionContainer.Parent = sidebar
-		
-		-- Description text inside scroll frame
-		descriptionLabel = Instance.new("TextLabel")
-		descriptionLabel.Name = "Description"
-		descriptionLabel.Size = UDim2.new(1, -10, 0, 200) -- Initial height, will be adjusted
-		descriptionLabel.Position = UDim2.fromOffset(0, 0)
-		descriptionLabel.BackgroundTransparency = 1
-		descriptionLabel.Text = "Game description will appear here..."
-		descriptionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-		descriptionLabel.TextScaled = false
-		descriptionLabel.TextSize = 10 -- Smaller text for mobile
-		descriptionLabel.TextWrapped = true
-		descriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-		descriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
-		descriptionLabel.Font = Enum.Font.Gotham
-		descriptionLabel.Parent = descriptionContainer
-	else
-		-- Regular text label for desktop
-		descriptionLabel = Instance.new("TextLabel")
-		descriptionLabel.Name = "Description"
-		descriptionLabel.Size = UDim2.new(1, -20, 0, currentDimensions.descriptionHeight)
-		descriptionLabel.Position = UDim2.fromOffset(10, currentDimensions.imageHeight + 20)
-		descriptionLabel.BackgroundTransparency = 1
-		descriptionLabel.Text = "Game description will appear here..."
-		descriptionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-		descriptionLabel.TextScaled = false
-		descriptionLabel.TextSize = 12
-		descriptionLabel.TextWrapped = true
-		descriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-		descriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
-		descriptionLabel.Font = Enum.Font.Gotham
-		descriptionLabel.Parent = sidebar
-	end
-
-	return screenGui
+	return backgroundFrame, closeButton, currentDimensions
 end
 
--- Function to show the teleport GUI with game data
-local function showTeleportGui(gameData)
-	-- Check client-side cooldown
-	local currentTime = tick()
-	if currentTime - lastGuiShow < CLIENT_COOLDOWN then
-		return -- Still in cooldown
+-- Function to update GUI content for selected game
+local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDimensions)
+	-- Clear existing content (except close button)
+	for _, child in pairs(backgroundFrame:GetChildren()) do
+		if child.Name ~= "CloseButton" and child.Name ~= "Shadow" and not child:IsA("UICorner") then
+			child:Destroy()
+		end
 	end
 
-	lastGuiShow = currentTime
+	-- Main content area
+	local contentFrame = Instance.new("Frame")
+	contentFrame.Name = "ContentFrame"
+	contentFrame.Size = UDim2.new(1, -20, 1, -50)
+	contentFrame.Position = UDim2.fromOffset(10, 40)
+	contentFrame.BackgroundTransparency = 1
+	contentFrame.Parent = backgroundFrame
 
-	if teleportGui then
-		teleportGui:Destroy()
+	-- Check if image and description are available
+	local hasImage = selectedGame.imageUrl and selectedGame.imageUrl ~= ""
+	local hasDescription = selectedGame.description and selectedGame.description ~= ""
+
+	if hasImage or hasDescription then
+		-- Main area (left side for content, right side for image/description)
+		local mainArea = Instance.new("Frame")
+		mainArea.Name = "MainArea"
+		mainArea.Size = UDim2.new(1, -currentDimensions.sidebarWidth - 10, 1, 0)
+		mainArea.Position = UDim2.fromOffset(0, 0)
+		mainArea.BackgroundTransparency = 1
+		mainArea.Parent = contentFrame
+
+		-- Sidebar for image and description
+		local sidebar = Instance.new("Frame")
+		sidebar.Name = "Sidebar"
+		sidebar.Size = UDim2.fromOffset(currentDimensions.sidebarWidth, currentDimensions.height - 60)
+		sidebar.Position = UDim2.new(1, -currentDimensions.sidebarWidth, 0, 0)
+		sidebar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+		sidebar.BorderSizePixel = 0
+		sidebar.Parent = contentFrame
+
+		local sidebarCorner = Instance.new("UICorner")
+		sidebarCorner.CornerRadius = UDim.new(0, 8)
+		sidebarCorner.Parent = sidebar
+
+		-- Sidebar content with scrolling
+		local sidebarScroll = Instance.new("ScrollingFrame")
+		sidebarScroll.Size = UDim2.new(1, -10, 1, -10)
+		sidebarScroll.Position = UDim2.fromOffset(5, 5)
+		sidebarScroll.BackgroundTransparency = 1
+		sidebarScroll.BorderSizePixel = 0
+		sidebarScroll.ScrollBarThickness = 4
+		sidebarScroll.ScrollBarImageColor3 = Color3.fromRGB(120, 120, 120)
+		sidebarScroll.Parent = sidebar
+
+		local currentY = 0
+
+		-- Image in sidebar
+		if hasImage then
+			local gameImage = Instance.new("ImageLabel")
+			gameImage.Name = "GameImage"
+			gameImage.Size = UDim2.fromOffset(currentDimensions.imageSize, currentDimensions.imageSize)
+			gameImage.Position =
+				UDim2.fromOffset((currentDimensions.sidebarWidth - currentDimensions.imageSize) / 2 - 5, currentY)
+			gameImage.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+			gameImage.BorderSizePixel = 0
+			gameImage.Image = selectedGame.imageUrl
+			gameImage.ScaleType = Enum.ScaleType.Fit
+			gameImage.Parent = sidebarScroll
+
+			local imageCorner = Instance.new("UICorner")
+			imageCorner.CornerRadius = UDim.new(0, 8)
+			imageCorner.Parent = gameImage
+
+			currentY = currentY + currentDimensions.imageSize + currentDimensions.padding
+		end
+
+		-- Description in sidebar
+		if hasDescription then
+			local descLabel = Instance.new("TextLabel")
+			descLabel.Name = "DescriptionLabel"
+			descLabel.Size = UDim2.new(1, -10, 0, 0) -- Height will be auto-calculated
+			descLabel.Position = UDim2.fromOffset(5, currentY)
+			descLabel.BackgroundTransparency = 1
+			descLabel.Text = selectedGame.description
+			descLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+			descLabel.TextSize = currentDimensions.textSize - 2
+			descLabel.TextXAlignment = Enum.TextXAlignment.Left
+			descLabel.TextYAlignment = Enum.TextYAlignment.Top
+			descLabel.TextWrapped = true
+			descLabel.Font = Enum.Font.Gotham
+			descLabel.Parent = sidebarScroll
+
+			-- Calculate required height for description
+			local textService = game:GetService("TextService")
+			local textBounds = textService:GetTextSize(
+				selectedGame.description,
+				currentDimensions.textSize - 2,
+				Enum.Font.Gotham,
+				Vector2.new(currentDimensions.sidebarWidth - 20, math.huge)
+			)
+			descLabel.Size = UDim2.new(1, -10, 0, textBounds.Y)
+
+			currentY = currentY + textBounds.Y + currentDimensions.padding
+		end
+
+		-- Update sidebar scroll canvas size
+		sidebarScroll.CanvasSize = UDim2.fromOffset(0, currentY)
 	end
 
-	teleportGui = createTeleportGui()
-	teleportGui.Parent = playerGui
+	-- Game title
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleLabel"
+	titleLabel.Size =
+		UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.titleSize + 10)
+	titleLabel.Position = UDim2.fromOffset(currentDimensions.padding, 0)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = selectedGame.title
+	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLabel.TextSize = currentDimensions.titleSize
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextYAlignment = Enum.TextYAlignment.Top
+	titleLabel.TextWrapped = true
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.Parent = contentFrame
 
-	-- Update GUI with game data
-	local backgroundFrame = teleportGui.Background
-	local mainContent = backgroundFrame.MainContent
-	local sidebar = backgroundFrame.Sidebar
-	local gameTitleLabel = mainContent.GameTitle
-	local discordTextBox = mainContent.DiscordUrl
-	local joinButton = mainContent.JoinButton
-	local closeButton = backgroundFrame.CloseButton
-	local gameImage = sidebar.GameImage
-	
-	-- Get description element (different for mobile vs desktop)
-	local descriptionLabel
-	if isMobile then
-		descriptionLabel = sidebar.DescriptionContainer.Description
-	else
-		descriptionLabel = sidebar.Description
+	-- Instruction text
+	local instructionLabel = Instance.new("TextLabel")
+	instructionLabel.Name = "InstructionLabel"
+	instructionLabel.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 40)
+	instructionLabel.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 20)
+	instructionLabel.BackgroundTransparency = 1
+	instructionLabel.Text = "Copy the Discord URL below to join the communication channel, then teleport to the game!"
+	instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+	instructionLabel.TextSize = currentDimensions.textSize
+	instructionLabel.TextXAlignment = Enum.TextXAlignment.Left
+	instructionLabel.TextYAlignment = Enum.TextYAlignment.Top
+	instructionLabel.TextWrapped = true
+	instructionLabel.Font = Enum.Font.Gotham
+	instructionLabel.Parent = contentFrame
+
+	-- Discord section
+	local discordFrame = Instance.new("Frame")
+	discordFrame.Name = "DiscordFrame"
+	discordFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 100)
+	discordFrame.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 80)
+	discordFrame.BackgroundColor3 = Color3.fromRGB(47, 49, 54)
+	discordFrame.BorderSizePixel = 0
+	discordFrame.Parent = contentFrame
+
+	local discordCorner = Instance.new("UICorner")
+	discordCorner.CornerRadius = UDim.new(0, 12)
+	discordCorner.Parent = discordFrame
+
+	-- Discord header with icon and title
+	local discordHeader = Instance.new("Frame")
+	discordHeader.Size = UDim2.new(1, 0, 0, 35)
+	discordHeader.Position = UDim2.fromOffset(0, 0)
+	discordHeader.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+	discordHeader.BorderSizePixel = 0
+	discordHeader.Parent = discordFrame
+
+	local headerCorner = Instance.new("UICorner")
+	headerCorner.CornerRadius = UDim.new(0, 12)
+	headerCorner.Parent = discordHeader
+
+	-- Clip bottom corners of header
+	local headerClipper = Instance.new("Frame")
+	headerClipper.Size = UDim2.new(1, 0, 0, 12)
+	headerClipper.Position = UDim2.fromOffset(0, 23)
+	headerClipper.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+	headerClipper.BorderSizePixel = 0
+	headerClipper.Parent = discordHeader
+
+	local discordIcon = Instance.new("TextLabel")
+	discordIcon.Size = UDim2.fromOffset(24, 24)
+	discordIcon.Position = UDim2.fromOffset(12, 6)
+	discordIcon.BackgroundTransparency = 1
+	discordIcon.Text = "💬"
+	discordIcon.TextScaled = true
+	discordIcon.Parent = discordHeader
+
+	local discordLabel = Instance.new("TextLabel")
+	discordLabel.Size = UDim2.new(1, -50, 0, 35)
+	discordLabel.Position = UDim2.fromOffset(40, 0)
+	discordLabel.BackgroundTransparency = 1
+	discordLabel.Text = "Join Communication Channel"
+	discordLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	discordLabel.TextSize = currentDimensions.textSize + 1
+	discordLabel.TextXAlignment = Enum.TextXAlignment.Left
+	discordLabel.TextYAlignment = Enum.TextYAlignment.Center
+	discordLabel.Font = Enum.Font.GothamBold
+	discordLabel.Parent = discordHeader
+
+	-- Discord URL section
+	local urlContainer = Instance.new("Frame")
+	urlContainer.Size = UDim2.new(1, -20, 0, 55)
+	urlContainer.Position = UDim2.fromOffset(10, 40)
+	urlContainer.BackgroundTransparency = 1
+	urlContainer.Parent = discordFrame
+
+	local copyInstructionLabel = Instance.new("TextLabel")
+	copyInstructionLabel.Size = UDim2.new(1, 0, 0, 18)
+	copyInstructionLabel.Position = UDim2.fromOffset(0, 0)
+	copyInstructionLabel.BackgroundTransparency = 1
+	copyInstructionLabel.Text = "Click the link below to select and copy:"
+	copyInstructionLabel.TextColor3 = Color3.fromRGB(185, 187, 190)
+	copyInstructionLabel.TextSize = currentDimensions.textSize - 2
+	copyInstructionLabel.TextXAlignment = Enum.TextXAlignment.Left
+	copyInstructionLabel.Font = Enum.Font.Gotham
+	copyInstructionLabel.Parent = urlContainer
+
+	local discordUrl = Instance.new("TextBox")
+	discordUrl.Size = UDim2.new(1, 0, 0, 32)
+	discordUrl.Position = UDim2.fromOffset(0, 20)
+	discordUrl.BackgroundColor3 = Color3.fromRGB(64, 68, 75)
+	discordUrl.BorderSizePixel = 0
+	discordUrl.Text = selectedGame.discordUrl
+	discordUrl.TextColor3 = Color3.fromRGB(114, 137, 218)
+	discordUrl.TextSize = currentDimensions.textSize
+	discordUrl.TextXAlignment = Enum.TextXAlignment.Center
+	discordUrl.TextYAlignment = Enum.TextYAlignment.Center
+	discordUrl.Font = Enum.Font.GothamMedium
+	discordUrl.ClearTextOnFocus = false
+	discordUrl.TextEditable = false
+	discordUrl.Parent = urlContainer
+
+	local urlCorner = Instance.new("UICorner")
+	urlCorner.CornerRadius = UDim.new(0, 6)
+	urlCorner.Parent = discordUrl
+
+	-- Add a subtle border/highlight effect
+	local urlStroke = Instance.new("UIStroke")
+	urlStroke.Color = Color3.fromRGB(114, 137, 218)
+	urlStroke.Transparency = 0.7
+	urlStroke.Thickness = 1
+	urlStroke.Parent = discordUrl
+
+	-- Gamemode selector (if multiple games available)
+	local gamemodeY = currentDimensions.titleSize + 200
+	if currentTeleportData and #currentTeleportData > 1 then
+		-- Gamemode selector frame
+		local gamemodeFrame = Instance.new("Frame")
+		gamemodeFrame.Name = "GamemodeFrame"
+		gamemodeFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 60)
+		gamemodeFrame.Position = UDim2.fromOffset(currentDimensions.padding, gamemodeY)
+		gamemodeFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
+		gamemodeFrame.BorderSizePixel = 0
+		gamemodeFrame.Parent = contentFrame
+
+		local gamemodeCorner = Instance.new("UICorner")
+		gamemodeCorner.CornerRadius = UDim.new(0, 8)
+		gamemodeCorner.Parent = gamemodeFrame
+
+		-- Gamemode label
+		local gamemodeLabel = Instance.new("TextLabel")
+		gamemodeLabel.Size = UDim2.new(1, -20, 0, 25)
+		gamemodeLabel.Position = UDim2.fromOffset(10, 5)
+		gamemodeLabel.BackgroundTransparency = 1
+		gamemodeLabel.Text = "Select Gamemode:"
+		gamemodeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		gamemodeLabel.TextSize = currentDimensions.textSize
+		gamemodeLabel.TextXAlignment = Enum.TextXAlignment.Left
+		gamemodeLabel.Font = Enum.Font.GothamBold
+		gamemodeLabel.Parent = gamemodeFrame
+
+		-- Gamemode dropdown
+		local gamemodeDropdown = Instance.new("TextButton")
+		gamemodeDropdown.Name = "GamemodeDropdown"
+		gamemodeDropdown.Size = UDim2.new(1, -20, 0, 25)
+		gamemodeDropdown.Position = UDim2.fromOffset(10, 30)
+		gamemodeDropdown.BackgroundColor3 = Color3.fromRGB(70, 70, 75)
+		gamemodeDropdown.BorderSizePixel = 0
+		gamemodeDropdown.Text = selectedGame.title .. " ▼"
+		gamemodeDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
+		gamemodeDropdown.TextSize = currentDimensions.textSize - 2
+		gamemodeDropdown.TextXAlignment = Enum.TextXAlignment.Left
+		gamemodeDropdown.Font = Enum.Font.Gotham
+		gamemodeDropdown.Parent = gamemodeFrame
+
+		local dropdownCorner = Instance.new("UICorner")
+		dropdownCorner.CornerRadius = UDim.new(0, 4)
+		dropdownCorner.Parent = gamemodeDropdown
+
+		-- Dropdown functionality
+		local dropdownOpen = false
+		local dropdownList = nil
+
+		gamemodeDropdown.MouseButton1Click:Connect(function()
+			print("[TP Client Debug] Gamemode dropdown clicked, dropdownOpen:", dropdownOpen)
+			if dropdownOpen then
+				-- Close dropdown
+				print("[TP Client Debug] Closing dropdown")
+				if dropdownList then
+					dropdownList:Destroy()
+					dropdownList = nil
+				end
+				dropdownOpen = false
+				gamemodeDropdown.Text = selectedGame.title .. " ▼"
+			else
+				-- Open dropdown
+				print("[TP Client Debug] Opening dropdown")
+				dropdownOpen = true
+				gamemodeDropdown.Text = selectedGame.title .. " ▲"
+
+				-- Create dropdown list
+				dropdownList = Instance.new("Frame")
+				dropdownList.Name = "DropdownList"
+				dropdownList.Size = UDim2.new(1, 0, 0, #currentTeleportData * 30)
+				dropdownList.Position = UDim2.fromOffset(0, 60)
+				dropdownList.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+				dropdownList.BorderSizePixel = 0
+				dropdownList.ZIndex = 100  -- Much higher ZIndex to ensure it's on top
+				dropdownList.ClipsDescendants = false
+				dropdownList.Parent = backgroundFrame  -- Parent to main frame instead of gamemode frame to avoid clipping
+
+				-- Adjust position relative to backgroundFrame instead of gamemodeFrame
+				local gamemodeFramePos = gamemodeFrame.Position
+				local gamemodeFrameSize = gamemodeFrame.Size
+				dropdownList.Position = UDim2.new(
+					gamemodeFramePos.X.Scale, 
+					gamemodeFramePos.X.Offset, 
+					gamemodeFramePos.Y.Scale, 
+					gamemodeFramePos.Y.Offset + gamemodeFrameSize.Y.Offset
+				)
+				dropdownList.Size = UDim2.new(gamemodeFrameSize.X.Scale, gamemodeFrameSize.X.Offset - 20, 0, #currentTeleportData * 30)
+
+				local listCorner = Instance.new("UICorner")
+				listCorner.CornerRadius = UDim.new(0, 4)
+				listCorner.Parent = dropdownList
+
+				-- Create buttons for each gamemode
+				print("[TP Client Debug] Creating dropdown options for", #currentTeleportData, "games")
+				for i, gameData in ipairs(currentTeleportData) do
+					print("[TP Client Debug] Game", i, ":", gameData.title)
+					local optionButton = Instance.new("TextButton")
+					optionButton.Size = UDim2.new(1, -10, 0, 25)
+					optionButton.Position = UDim2.fromOffset(5, (i - 1) * 30 + 2)
+					optionButton.BackgroundColor3 = gameData.title == selectedGame.title
+							and Color3.fromRGB(70, 120, 180)
+						or Color3.fromRGB(70, 70, 75)
+					optionButton.BorderSizePixel = 0
+					optionButton.Text = gameData.title
+					optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+					optionButton.TextSize = currentDimensions.textSize - 2
+					optionButton.TextXAlignment = Enum.TextXAlignment.Left
+					optionButton.Font = Enum.Font.Gotham
+					optionButton.ZIndex = 101  -- Higher than dropdown list
+					optionButton.Parent = dropdownList
+
+					local optionCorner = Instance.new("UICorner")
+					optionCorner.CornerRadius = UDim.new(0, 3)
+					optionCorner.Parent = optionButton
+
+					-- Option click handler
+					optionButton.MouseButton1Click:Connect(function()
+						print("[TP Client Debug] Option clicked:", gameData.title)
+						-- Update selected game
+						updateGuiForSelectedGame(backgroundFrame, gameData, currentDimensions)
+
+						-- Close dropdown
+						if dropdownList then
+							dropdownList:Destroy()
+							dropdownList = nil
+						end
+						dropdownOpen = false
+					end)
+				end
+			end
+		end)
+
+		gamemodeY = gamemodeY + 80
 	end
 
-	-- Set game data
-	currentGameData = gameData -- Store for error handling
-	gameTitleLabel.Text = gameData.title or "Unknown Game"
-	discordTextBox.Text = gameData.dc_url or ""
-	
-	-- Set sidebar content
-	if gameData.image_url and gameData.image_url ~= "" then
-		gameImage.Image = gameData.image_url
-	else
-		gameImage.Image = "" -- No image available
-	end
-	
-	-- Set description and handle mobile scrolling
-	local descriptionText = gameData.description or "No description available for this game."
-	descriptionLabel.Text = descriptionText
-	
-	-- For mobile, calculate and set the canvas size for scrolling
-	if isMobile then
-		local textService = game:GetService("TextService")
-		local textSize = textService:GetTextSize(
-			descriptionText,
-			descriptionLabel.TextSize,
-			descriptionLabel.Font,
-			Vector2.new(descriptionLabel.AbsoluteSize.X, math.huge)
-		)
-		
-		-- Set the canvas size to fit the text
-		local descriptionContainer = sidebar.DescriptionContainer
-		local paddingHeight = 20
-		local contentHeight = math.max(textSize.Y + paddingHeight, currentDimensions.descriptionHeight)
-		descriptionContainer.CanvasSize = UDim2.fromOffset(0, contentHeight)
-		descriptionLabel.Size = UDim2.new(1, -10, 0, contentHeight - paddingHeight)
-	end	-- Animate GUI entrance
-	backgroundFrame.Position = UDim2.new(0.5, -currentDimensions.width/2, 1, 0)
-	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	-- Play button
+	local playButton = Instance.new("TextButton")
+	playButton.Name = "PlayButton"
+	playButton.Size =
+		UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.buttonHeight)
+	playButton.Position = UDim2.fromOffset(currentDimensions.padding, gamemodeY + 20)
+	playButton.BackgroundColor3 = Color3.fromRGB(40, 167, 69)
+	playButton.BorderSizePixel = 0
+	playButton.Text = "🎮 Play Game"
+	playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	playButton.TextSize = currentDimensions.textSize + 2
+	playButton.Font = Enum.Font.GothamBold
+	playButton.Parent = contentFrame
+
+	local playCorner = Instance.new("UICorner")
+	playCorner.CornerRadius = UDim.new(0, 8)
+	playCorner.Parent = playButton
+
+	-- Button click handlers
+	playButton.MouseButton1Click:Connect(function()
+		-- Request teleportation with the selected game's teleport URL, part key, and title
+		teleportPlayerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
+	end)
+
+	return backgroundFrame
+end
+
+-- Function to show the teleport GUI
+local function showTeleportGui(teleportData)
+	print("[TP Client Debug] showTeleportGui called")
+	print("[TP Client Debug] teleportData:", teleportData)
+
+	currentTeleportData = teleportData
+
+	-- Use first game as default selection
+	local selectedGame = teleportData[1]
+	print("[TP Client Debug] Selected game:", selectedGame.title)
+
+	-- Create the GUI
+	local backgroundFrame, closeButton, currentDimensions = createTeleportGui()
+
+	-- Update content for selected game
+	updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDimensions)
+
+	-- Animate GUI in
+	local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 	local tween = TweenService:Create(backgroundFrame, tweenInfo, {
-		Position = UDim2.new(0.5, -currentDimensions.width/2, 0.5, -currentDimensions.height/2),
+		Position = UDim2.new(0.5, -currentDimensions.width / 2, 0.5, -currentDimensions.height / 2),
 	})
 	tween:Play()
 
-	-- Button functionality
-	joinButton.MouseButton1Click:Connect(function()
-		if gameData.tp_url and gameData.tp_url ~= "" then
-			teleportPlayerRemote:FireServer(gameData.tp_url, gameData.part_key)
-			teleportGui:Destroy()
-			teleportGui = nil
-		end
-	end)
-
+	-- Close function
 	local function closeGui()
 		if teleportGui then
 			local tweenOut = TweenService:Create(backgroundFrame, tweenInfo, {
-				Position = UDim2.new(0.5, -currentDimensions.width/2, 1, 0),
+				Position = UDim2.new(0.5, -currentDimensions.width / 2, 1, 0),
 			})
 			tweenOut:Play()
 			tweenOut.Completed:Connect(function()
@@ -443,10 +628,21 @@ local function showTeleportGui(gameData)
 end
 
 -- Connect to server events
-showTpGuiRemote.OnClientEvent:Connect(showTeleportGui)
+showTpGuiRemote.OnClientEvent:Connect(function(teleportData)
+	print("[TP Client Debug] Received teleport data from server")
+	print("[TP Client Debug] Data type:", type(teleportData))
+	if teleportData then
+		print("[TP Client Debug] Data length:", #teleportData)
+		if #teleportData > 0 then
+			print("[TP Client Debug] First game title:", teleportData[1].title)
+		end
+	end
+
+	showTeleportGui(teleportData)
+end)
 
 -- Handle teleport failures
-teleportFailedRemote.OnClientEvent:Connect(function(errorMessage, partKey)
+teleportFailedRemote.OnClientEvent:Connect(function(errorMessage)
 	-- Show error message to player
 	spawn(function()
 		showErrorMessage(errorMessage)
@@ -460,3 +656,4 @@ teleportFailedRemote.OnClientEvent:Connect(function(errorMessage, partKey)
 end)
 
 print("Teleportation client system loaded!")
+print("[TP Client Debug] Client script initialization complete")

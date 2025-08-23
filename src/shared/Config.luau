@@ -39,7 +39,7 @@ Config.TELEPORT_SETTINGS = {
 }
 
 -- Debug Settings
-Config.DEBUG_MODE = false -- Set to true for additional logging
+Config.DEBUG_MODE = true -- Set to true for additional logging
 
 -- Validation function for URLs
 function Config.validateTeleportUrl(url)

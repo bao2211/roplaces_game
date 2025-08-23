@@ -37,25 +37,48 @@ local COOLDOWN_DURATION = 3 -- seconds before player can trigger GUI again
 -- Function to fetch game data from Google Sheets
 local function fetchGameData()
 	Config.debugLog("Attempting to fetch game data from Google Sheets")
+	Config.debugLog("Using URL: " .. Config.GOOGLE_SCRIPT_URL)
+	Config.debugLog("HttpService.HttpEnabled: " .. tostring(HttpService.HttpEnabled))
 
 	local success, result = pcall(function()
 		local response = HttpService:GetAsync(Config.GOOGLE_SCRIPT_URL)
+		Config.debugLog("HTTP Response received: " .. string.sub(response, 1, 200) .. "...")
 		return HttpService:JSONDecode(response)
 	end)
 
+	Config.debugLog("HTTP Request success: " .. tostring(success))
+	if not success then
+		Config.debugLog("HTTP Request error: " .. tostring(result))
+	end
+
 	if success and result and type(result) == "table" then
-		-- Validate each game data entry
+		-- Validate each game group entry
 		local validatedData = {}
-		for _, gameInfo in ipairs(result) do
-			local validatedGameInfo = GameData.validateGameInfo(gameInfo)
-			if validatedGameInfo then
-				table.insert(validatedData, validatedGameInfo)
+		for _, gameGroup in ipairs(result) do
+			if gameGroup and gameGroup.part_key and gameGroup.games then
+				-- Validate each game within the group
+				local validatedGames = {}
+				for _, gameInfo in ipairs(gameGroup.games) do
+					local validatedGameInfo = GameData.validateGameInfo(gameInfo)
+					if validatedGameInfo then
+						table.insert(validatedGames, validatedGameInfo)
+					end
+				end
+
+				-- Only include the group if it has valid games
+				if #validatedGames > 0 then
+					table.insert(validatedData, {
+						part_key = gameGroup.part_key,
+						games = validatedGames,
+						has_multiple_modes = gameGroup.has_multiple_modes or #validatedGames > 1,
+					})
+				end
 			end
 		end
 
 		gameDataCache = validatedData
 		lastCacheUpdate = tick()
-		Config.debugLog("Game data cache updated successfully with " .. #validatedData .. " entries")
+		Config.debugLog("Game data cache updated successfully with " .. #validatedData .. " groups")
 		return validatedData
 	else
 		warn("Failed to fetch game data from Google Sheets: " .. tostring(result))
@@ -74,9 +97,9 @@ end
 -- Function to find game data by part key
 local function findGameDataByKey(partKey)
 	local data = getGameData()
-	for _, gameInfo in ipairs(data) do
-		if gameInfo.part_key == partKey then
-			return gameInfo
+	for _, gameGroup in ipairs(data) do
+		if gameGroup.part_key == partKey then
+			return gameGroup
 		end
 	end
 	return nil
@@ -84,24 +107,24 @@ end
 
 -- Function to update server_down count for invalid games
 local function updateServerDownCount(partKey)
-	local success, result = pcall(function()
+	local success, responseData = pcall(function()
 		local requestData = {
 			action = "update_server_down",
 			part_key = partKey,
 		}
 
-		local response = HttpService:PostAsync(
+		local httpResponse = HttpService:PostAsync(
 			Config.GOOGLE_SCRIPT_URL,
 			HttpService:JSONEncode(requestData),
 			Enum.HttpContentType.ApplicationJson
 		)
-		return HttpService:JSONDecode(response)
+		return HttpService:JSONDecode(httpResponse)
 	end)
 
 	if success then
 		Config.debugLog("Updated server_down count for: " .. partKey)
 	else
-		warn("Failed to update server_down count for: " .. partKey)
+		warn("Failed to update server_down count for: " .. partKey .. " - Error: " .. tostring(responseData))
 	end
 end
 
@@ -153,39 +176,54 @@ local function onPartTouched(hit, part)
 	Config.debugLog("Player " .. player.Name .. " touched teleport part: " .. partKey)
 
 	local gameData = findGameDataByKey(partKey)
-	if gameData then
-		-- Sanitize URLs before sending to client
-		local sanitizedData = {
-			part_key = gameData.part_key,
-			tp_url = GameData.sanitizeUrl(gameData.tp_url),
-			dc_url = GameData.sanitizeUrl(gameData.dc_url),
-			title = GameData.formatDisplayText(gameData.title, 30),
-			active = gameData.active,
-			last_updated = gameData.last_updated,
-			server_down = gameData.server_down,
-			image_url = gameData.image_url and GameData.sanitizeUrl(gameData.image_url) or nil,
-			description = gameData.description or "",
-		}
+	Config.debugLog("Game data found for " .. partKey .. ": " .. tostring(gameData ~= nil))
 
-		-- Send game data to client to show GUI
-		showTpGuiRemote:FireClient(player, sanitizedData)
-		Config.debugLog("Sent game data to client for: " .. partKey)
+	if gameData then
+		Config.debugLog("Game data has games: " .. tostring(gameData.games ~= nil))
+		if gameData.games then
+			Config.debugLog("Number of games: " .. #gameData.games)
+		end
+	end
+
+	if gameData and gameData.games and #gameData.games > 0 then
+		-- Prepare games array to send to client
+		local gamesArray = {}
+
+		-- Process all games for this part key
+		for _, game in ipairs(gameData.games) do
+			local sanitizedGame = {
+				partKey = gameData.part_key, -- Add partKey to each game for client reference
+				tp_url = GameData.sanitizeUrl(game.tp_url),
+				discordUrl = GameData.sanitizeUrl(game.dc_url), -- Rename to match client expectations
+				title = GameData.formatDisplayText(game.title, 30),
+				active = game.active,
+				last_updated = game.last_updated,
+				server_down = game.server_down,
+				imageUrl = game.image_url and GameData.sanitizeUrl(game.image_url) or nil, -- Rename to match client expectations
+				description = game.description or "",
+			}
+			table.insert(gamesArray, sanitizedGame)
+		end
+
+		-- Send game array directly to client to show GUI
+		showTpGuiRemote:FireClient(player, gamesArray)
+		Config.debugLog("Sent game data to client for: " .. partKey .. " with " .. #gamesArray .. " game modes")
 	else
 		warn("No game data found for part_key: " .. partKey)
 	end
 end
 
 -- Function to handle teleportation
-local function onTeleportPlayer(player, tpUrl, partKey)
-	Config.debugLog("Teleport request from " .. player.Name .. " to: " .. tostring(tpUrl))
-
-	-- Validate the URL
-	local isValid, message = Config.validateTeleportUrl(tpUrl)
-	if not isValid then
-		warn("Invalid teleport URL for player " .. player.Name .. ": " .. message)
-		teleportFailedRemote:FireClient(player, "Invalid game link", partKey)
-		return
-	end
+local function onTeleportPlayer(player, tpUrl, partKey, gameTitle)
+	Config.debugLog(
+		"Teleport request from "
+			.. player.Name
+			.. " to: "
+			.. tostring(tpUrl)
+			.. " (Game: "
+			.. tostring(gameTitle)
+			.. ")"
+	)
 
 	-- Extract place ID from TP-URL
 	local placeId = string.match(tpUrl, "roblox://placeId=(%d+)")
@@ -308,8 +346,8 @@ workspace.DescendantAdded:Connect(function(descendant)
 end)
 
 -- Connect remote events
-teleportPlayerRemote.OnServerEvent:Connect(function(player, tpUrl, partKey)
-	onTeleportPlayer(player, tpUrl, partKey)
+teleportPlayerRemote.OnServerEvent:Connect(function(player, tpUrl, partKey, gameTitle)
+	onTeleportPlayer(player, tpUrl, partKey, gameTitle)
 end)
 
 -- Clean up cooldowns when players leave

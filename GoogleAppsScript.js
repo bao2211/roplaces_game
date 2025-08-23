@@ -39,6 +39,7 @@ function doGet(e) {
 
 /**
  * Fetch game data from Google Sheet
+ * Groups games by part_key to handle multiple games per teleport part
  */
 function getGameData() {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
@@ -54,8 +55,16 @@ function getGameData() {
   }
   
   // Assuming first row contains headers
-  const headers = data[0].map(header => header.toString().toLowerCase().replace(/[^a-z0-9]/g, '_'));
-  const gameData = [];
+  const headers = data[0].map(header => {
+    const normalized = header.toString().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    // Fix specific field mappings
+    if (normalized === 'server_down_') return 'server_down';
+    if (normalized === 'tp_url_') return 'tp_url';
+    if (normalized === 'dc_url_') return 'dc_url';
+    if (normalized === 'image_url_') return 'image_url';
+    return normalized;
+  });
+  const gameDataMap = new Map(); // Use Map to group by part_key
   
   // Process each data row
   for (let i = 1; i < data.length; i++) {
@@ -83,11 +92,26 @@ function getGameData() {
     
     // Only include rows with required fields
     if (gameInfo.part_key && gameInfo.tp_url && gameInfo.dc_url && gameInfo.title) {
-      gameData.push(gameInfo);
+      const partKey = gameInfo.part_key;
+      
+      if (!gameDataMap.has(partKey)) {
+        // First game for this part_key
+        gameDataMap.set(partKey, {
+          part_key: partKey,
+          games: [gameInfo],
+          has_multiple_modes: false
+        });
+      } else {
+        // Additional game for existing part_key
+        const existingData = gameDataMap.get(partKey);
+        existingData.games.push(gameInfo);
+        existingData.has_multiple_modes = true;
+      }
     }
   }
   
-  return gameData;
+  // Convert Map to Array for return
+  return Array.from(gameDataMap.values());
 }
 
 /**
@@ -148,7 +172,13 @@ function updateGameData(requestData) {
   // Update the row with new data
   const updateData = [];
   for (let j = 0; j < headers.length; j++) {
-    const header = headers[j].toString().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    let header = headers[j].toString().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    // Fix specific field mappings
+    if (header === 'server_down_') header = 'server_down';
+    if (header === 'tp_url_') header = 'tp_url';
+    if (header === 'dc_url_') header = 'dc_url';
+    if (header === 'image_url_') header = 'image_url';
+    
     updateData.push(requestData[header] || data[rowIndex - 1][j]);
   }
   
@@ -177,7 +207,13 @@ function addGameData(requestData) {
   
   const newRow = [];
   for (let j = 0; j < headers.length; j++) {
-    const header = headers[j].toString().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    let header = headers[j].toString().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    // Fix specific field mappings
+    if (header === 'server_down_') header = 'server_down';
+    if (header === 'tp_url_') header = 'tp_url';
+    if (header === 'dc_url_') header = 'dc_url';
+    if (header === 'image_url_') header = 'image_url';
+    
     newRow.push(requestData[header] || '');
   }
   
@@ -199,23 +235,37 @@ function addGameData(requestData) {
 
 /**
  * Update server_down count for a specific game
+ * Now supports updating specific game mode within a part_key
  */
-function updateServerDown(partKey) {
+function updateServerDown(partKey, gameTitle = null) {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   
-  // Find the row with matching part_key
+  // Find the row with matching part_key and optionally game title
   let rowIndex = -1;
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === partKey) { // Assuming part_key is in first column
-      rowIndex = i + 1; // Sheet rows are 1-indexed
-      break;
+      // If gameTitle is specified, match it too (for multiple games per part_key)
+      if (gameTitle) {
+        const titleIndex = headers.findIndex(h => h.toString().toLowerCase().includes('title'));
+        if (titleIndex !== -1 && data[i][titleIndex] === gameTitle) {
+          rowIndex = i + 1; // Sheet rows are 1-indexed
+          break;
+        }
+      } else {
+        // If no gameTitle specified, use first match
+        rowIndex = i + 1; // Sheet rows are 1-indexed
+        break;
+      }
     }
   }
   
   if (rowIndex === -1) {
-    throw new Error('Game with part_key "' + partKey + '" not found');
+    const errorMsg = gameTitle 
+      ? `Game with part_key "${partKey}" and title "${gameTitle}" not found`
+      : `Game with part_key "${partKey}" not found`;
+    throw new Error(errorMsg);
   }
   
   // Find server_down column index
@@ -237,7 +287,10 @@ function updateServerDown(partKey) {
     sheet.getRange(rowIndex, lastUpdatedIndex + 1).setValue(new Date());
   }
   
-  console.log('Updated server_down count for ' + partKey + ' to ' + newValue);
+  const logMsg = gameTitle 
+    ? `Updated server_down count for ${partKey} (${gameTitle}) to ${newValue}`
+    : `Updated server_down count for ${partKey} to ${newValue}`;
+  console.log(logMsg);
   
   return ContentService
     .createTextOutput(JSON.stringify({
@@ -293,8 +346,10 @@ function createSampleData() {
   
   // Add sample data
   const sampleData = [
-    ['trlx_tp', 'https://www.roblox.com/games/123456789', 'https://discord.gg/trlx', 'TRLX Games', true, new Date(), 3, 'https://example.com/trlx.png', 'Experience amazing adventures in the TRLX gaming universe with friends and explore countless worlds.'],
-    ['hub_tp', 'https://www.roblox.com/games/987654321', 'https://discord.gg/hub', 'Gaming Hub', true, new Date(), 0, 'https://example.com/hub.png', 'The central hub for all gaming activities. Meet other players and discover new games together.'],
+    ['trlx_tp', 'https://www.roblox.com/games/123456789', 'https://discord.gg/trlx', 'TRLX Games - PvP', true, new Date(), 3, 'https://example.com/trlx-pvp.png', 'Experience intense PvP combat in the TRLX gaming universe with competitive matches and leaderboards.'],
+    ['trlx_tp', 'https://www.roblox.com/games/123456790', 'https://discord.gg/trlx', 'TRLX Games - Roleplay', true, new Date(), 0, 'https://example.com/trlx-rp.png', 'Immerse yourself in roleplay scenarios with custom characters and storylines in the TRLX universe.'],
+    ['hub_tp', 'https://www.roblox.com/games/987654321', 'https://discord.gg/hub', 'Gaming Hub - Main', true, new Date(), 0, 'https://example.com/hub.png', 'The central hub for all gaming activities. Meet other players and discover new games together.'],
+    ['hub_tp', 'https://www.roblox.com/games/987654322', 'https://discord.gg/hub', 'Gaming Hub - VIP', true, new Date(), 1, 'https://example.com/hub-vip.png', 'Exclusive VIP area with premium features and enhanced gameplay experience for members.'],
     ['test_tp', 'https://www.roblox.com/games/555666777', 'https://discord.gg/test', 'Test Server', false, new Date(), 1, '', 'This is a test server for development and debugging purposes. Join to help test new features!']
   ];
   
