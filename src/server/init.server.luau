@@ -167,7 +167,7 @@ local function onPartTouched(hit, part)
 	-- Check if player is already on this specific part to prevent duplicate triggers
 	local playerKey = player.UserId
 	local partPlayerKey = playerKey .. "_" .. partKey
-	
+
 	if playersOnParts[partPlayerKey] then
 		-- Player is already on this part, don't retrigger
 		return
@@ -315,19 +315,19 @@ local function setupTeleportParts()
 						child.Touched:Connect(function(hit)
 							onPartTouched(hit, child)
 						end)
-						
+
 						-- Connect touch ended event to track when players leave
 						child.TouchEnded:Connect(function(hit)
 							local humanoid = hit.Parent:FindFirstChild("Humanoid")
 							if not humanoid then
 								return
 							end
-							
+
 							local player = Players:GetPlayerFromCharacter(hit.Parent)
 							if not player then
 								return
 							end
-							
+
 							local partKey = child:GetAttribute("part_key")
 							if partKey then
 								local playerKey = player.UserId
@@ -369,25 +369,25 @@ workspace.DescendantAdded:Connect(function(descendant)
 				descendant.Touched:Connect(function(hit)
 					onPartTouched(hit, descendant)
 				end)
-				
+
 				-- Connect touch ended event for dynamically added parts
 				descendant.TouchEnded:Connect(function(hit)
 					local humanoid = hit.Parent:FindFirstChild("Humanoid")
 					if not humanoid then
 						return
 					end
-					
+
 					local player = Players:GetPlayerFromCharacter(hit.Parent)
 					if not player then
 						return
 					end
-					
+
 					local playerKey = player.UserId
 					local partPlayerKey = playerKey .. "_" .. partKey
 					playersOnParts[partPlayerKey] = nil -- Remove player from this part
 					Config.debugLog("Player " .. player.Name .. " left teleport part: " .. partKey)
 				end)
-				
+
 				Config.debugLog("Setup new teleport part: " .. descendant.Name .. " (key: " .. partKey .. ")")
 			else
 				warn("New teleport part " .. descendant.Name .. " missing part_key attribute")
@@ -404,7 +404,7 @@ end)
 -- Clean up cooldowns when players leave
 Players.PlayerRemoving:Connect(function(player)
 	playerCooldowns[player.UserId] = nil
-	
+
 	-- Clean up all part tracking for this player
 	local playerKey = player.UserId
 	for key, _ in pairs(playersOnParts) do
@@ -412,7 +412,7 @@ Players.PlayerRemoving:Connect(function(player)
 			playersOnParts[key] = nil
 		end
 	end
-	
+
 	Config.debugLog("Cleaned up cooldown and part tracking data for player: " .. player.Name)
 end)
 

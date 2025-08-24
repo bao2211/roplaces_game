@@ -23,26 +23,38 @@ local currentTeleportData = nil
 
 -- Mobile detection
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+-- TEMPORARY: Force mobile mode for testing (remove this line when done testing)
+-- isMobile = true
+print(
+	"[TP Client Debug] Mobile detection - TouchEnabled:",
+	UserInputService.TouchEnabled,
+	"KeyboardEnabled:",
+	UserInputService.KeyboardEnabled,
+	"isMobile:",
+	isMobile
+)
 
 -- Responsive dimensions
 local function getResponsiveDimensions()
 	local screenSize = workspace.CurrentCamera.ViewportSize
 
 	if isMobile then
-		-- Mobile dimensions (smaller and more compact)
-		return {
-			width = math.min(screenSize.X * 0.95, 420),
-			height = math.min(screenSize.Y * 0.8, 500),
-			imageSize = 120,
+		-- Mobile dimensions (optimized for horizontal space and scrolling)
+		local mobileDimensions = {
+			width = math.min(screenSize.X * 0.95, screenSize.X - 20), -- Use almost full width
+			height = math.min(screenSize.Y * 0.8, screenSize.Y - 100), -- Use more vertical space
+			imageSize = 80, -- Increased for better visibility
 			padding = 8,
-			titleSize = 18,
-			textSize = 14,
-			buttonHeight = 40,
-			sidebarWidth = 140,
+			titleSize = 14,
+			textSize = 12,
+			buttonHeight = 35,
+			sidebarWidth = 0, -- No sidebar on mobile
 		}
+		print("[TP Client Debug] Using mobile dimensions:", mobileDimensions.width, "x", mobileDimensions.height)
+		return mobileDimensions
 	else
 		-- Desktop dimensions
-		return {
+		local desktopDimensions = {
 			width = 600,
 			height = 550,
 			imageSize = 150,
@@ -52,6 +64,8 @@ local function getResponsiveDimensions()
 			buttonHeight = 50,
 			sidebarWidth = 200,
 		}
+		print("[TP Client Debug] Using desktop dimensions:", desktopDimensions.width, "x", desktopDimensions.height)
+		return desktopDimensions
 	end
 end
 
@@ -124,6 +138,14 @@ local function createTeleportGui()
 
 	-- Get responsive dimensions
 	local currentDimensions = getResponsiveDimensions()
+	print(
+		"[TP Client Debug] Creating GUI with dimensions:",
+		currentDimensions.width,
+		"x",
+		currentDimensions.height,
+		"isMobile:",
+		isMobile
+	)
 
 	-- Create main GUI
 	teleportGui = Instance.new("ScreenGui")
@@ -135,7 +157,8 @@ local function createTeleportGui()
 	backgroundFrame.Name = "BackgroundFrame"
 	backgroundFrame.Size = UDim2.fromOffset(currentDimensions.width, currentDimensions.height)
 	backgroundFrame.Position = UDim2.new(0.5, -currentDimensions.width / 2, 1, 0) -- Start off-screen
-	backgroundFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+	-- Different background colors for mobile vs desktop to make it obvious
+	backgroundFrame.BackgroundColor3 = isMobile and Color3.fromRGB(45, 60, 45) or Color3.fromRGB(45, 45, 50)
 	backgroundFrame.BorderSizePixel = 0
 	backgroundFrame.Parent = teleportGui
 
@@ -187,20 +210,37 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 		end
 	end
 
-	-- Main content area
-	local contentFrame = Instance.new("Frame")
-	contentFrame.Name = "ContentFrame"
-	contentFrame.Size = UDim2.new(1, -20, 1, -50)
-	contentFrame.Position = UDim2.fromOffset(10, 40)
-	contentFrame.BackgroundTransparency = 1
-	contentFrame.Parent = backgroundFrame
+	-- Main content area (scrollable on mobile)
+	local contentFrame
+	if isMobile then
+		-- Create scrolling frame for mobile
+		contentFrame = Instance.new("ScrollingFrame")
+		contentFrame.Name = "ContentFrame"
+		contentFrame.Size = UDim2.new(1, -10, 1, -45)
+		contentFrame.Position = UDim2.fromOffset(5, 40)
+		contentFrame.BackgroundTransparency = 1
+		contentFrame.BorderSizePixel = 0
+		contentFrame.ScrollBarThickness = 4
+		contentFrame.ScrollBarImageColor3 = Color3.fromRGB(120, 120, 120)
+		contentFrame.CanvasSize = UDim2.fromOffset(0, 0) -- Will be updated based on content
+		contentFrame.Parent = backgroundFrame
+	else
+		-- Regular frame for desktop
+		contentFrame = Instance.new("Frame")
+		contentFrame.Name = "ContentFrame"
+		contentFrame.Size = UDim2.new(1, -20, 1, -50)
+		contentFrame.Position = UDim2.fromOffset(10, 40)
+		contentFrame.BackgroundTransparency = 1
+		contentFrame.Parent = backgroundFrame
+	end
 
 	-- Check if image and description are available
 	local hasImage = selectedGame.imageUrl and selectedGame.imageUrl ~= ""
 	local hasDescription = selectedGame.description and selectedGame.description ~= ""
 
-	if hasImage or hasDescription then
-		-- Main area (left side for content, right side for image/description)
+	-- Mobile uses vertical layout, desktop uses sidebar
+	if (hasImage or hasDescription) and not isMobile then
+		-- Desktop: Main area (left side for content, right side for image/description)
 		local mainArea = Instance.new("Frame")
 		mainArea.Name = "MainArea"
 		mainArea.Size = UDim2.new(1, -currentDimensions.sidebarWidth - 10, 1, 0)
@@ -286,29 +326,57 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 		sidebarScroll.CanvasSize = UDim2.fromOffset(0, currentY)
 	end
 
-	-- Game title
+	-- Track current Y position for mobile scrolling layout
+	local currentY = 0
+
+	-- Game title (responsive sizing)
 	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Name = "TitleLabel"
-	titleLabel.Size =
-		UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.titleSize + 10)
-	titleLabel.Position = UDim2.fromOffset(currentDimensions.padding, 0)
+	if isMobile then
+		titleLabel.Size = UDim2.new(1, -16, 0, currentDimensions.titleSize + 5)
+		titleLabel.Position = UDim2.fromOffset(8, currentY)
+		currentY = currentY + currentDimensions.titleSize + 10
+	else
+		titleLabel.Size =
+			UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.titleSize + 10)
+		titleLabel.Position = UDim2.fromOffset(currentDimensions.padding, 0)
+	end
 	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = selectedGame.title
+	-- Add mobile indicator to title for testing
+	titleLabel.Text = (isMobile and "📱 MOBILE: " or "🖥️ DESKTOP: ") .. selectedGame.title
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.TextSize = currentDimensions.titleSize
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextXAlignment = isMobile and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
 	titleLabel.TextYAlignment = Enum.TextYAlignment.Top
 	titleLabel.TextWrapped = true
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.Parent = contentFrame
 
-	-- Instruction text
+	-- Instruction text (compact on mobile)
 	local instructionLabel = Instance.new("TextLabel")
 	instructionLabel.Name = "InstructionLabel"
-	instructionLabel.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 40)
-	instructionLabel.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 20)
+	if isMobile then
+		instructionLabel.Size = UDim2.new(1, -16, 0, 30)
+		instructionLabel.Position = UDim2.fromOffset(8, currentY)
+		currentY = currentY + 35
+	else
+		instructionLabel.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 40)
+		instructionLabel.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 20)
+	end
 	instructionLabel.BackgroundTransparency = 1
-	instructionLabel.Text = "Copy the Discord URL below to join the communication channel, then teleport to the game!"
+	-- Show dimensions in instruction text for debugging
+	local dimensionText = string.format(
+		"Size: %dx%d | Text: %d",
+		currentDimensions.width,
+		currentDimensions.height,
+		currentDimensions.textSize
+	)
+	instructionLabel.Text = isMobile and ("📱 " .. dimensionText .. " | Copy Discord link, then play!")
+		or (
+			"🖥️ "
+			.. dimensionText
+			.. " | Copy the Discord URL below to join the communication channel, then teleport to the game!"
+		)
 	instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 	instructionLabel.TextSize = currentDimensions.textSize
 	instructionLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -317,85 +385,95 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	instructionLabel.Font = Enum.Font.Gotham
 	instructionLabel.Parent = contentFrame
 
-	-- Discord section
+	-- Discord section (mobile-responsive)
 	local discordFrame = Instance.new("Frame")
 	discordFrame.Name = "DiscordFrame"
-	discordFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 100)
-	discordFrame.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 80)
-	discordFrame.BackgroundColor3 = Color3.fromRGB(47, 49, 54)
+	if isMobile then
+		discordFrame.Size = UDim2.new(1, -16, 0, 60)
+		discordFrame.Position = UDim2.fromOffset(8, currentY)
+		currentY = currentY + 70
+	else
+		discordFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 100)
+		discordFrame.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 80)
+	end
+	discordFrame.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
 	discordFrame.BorderSizePixel = 0
 	discordFrame.Parent = contentFrame
 
 	local discordCorner = Instance.new("UICorner")
-	discordCorner.CornerRadius = UDim.new(0, 12)
+	discordCorner.CornerRadius = UDim.new(0, isMobile and 6 or 12)
 	discordCorner.Parent = discordFrame
 
-	-- Discord header with icon and title
-	local discordHeader = Instance.new("Frame")
-	discordHeader.Size = UDim2.new(1, 0, 0, 35)
-	discordHeader.Position = UDim2.fromOffset(0, 0)
-	discordHeader.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-	discordHeader.BorderSizePixel = 0
-	discordHeader.Parent = discordFrame
+	if not isMobile then
+		-- Discord header with icon and title (desktop only)
+		local discordHeader = Instance.new("Frame")
+		discordHeader.Size = UDim2.new(1, 0, 0, 35)
+		discordHeader.Position = UDim2.fromOffset(0, 0)
+		discordHeader.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+		discordHeader.BorderSizePixel = 0
+		discordHeader.Parent = discordFrame
 
-	local headerCorner = Instance.new("UICorner")
-	headerCorner.CornerRadius = UDim.new(0, 12)
-	headerCorner.Parent = discordHeader
+		local headerCorner = Instance.new("UICorner")
+		headerCorner.CornerRadius = UDim.new(0, 12)
+		headerCorner.Parent = discordHeader
 
-	-- Clip bottom corners of header
-	local headerClipper = Instance.new("Frame")
-	headerClipper.Size = UDim2.new(1, 0, 0, 12)
-	headerClipper.Position = UDim2.fromOffset(0, 23)
-	headerClipper.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-	headerClipper.BorderSizePixel = 0
-	headerClipper.Parent = discordHeader
+		-- Clip bottom corners of header
+		local headerClipper = Instance.new("Frame")
+		headerClipper.Size = UDim2.new(1, 0, 0, 12)
+		headerClipper.Position = UDim2.fromOffset(0, 23)
+		headerClipper.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+		headerClipper.BorderSizePixel = 0
+		headerClipper.Parent = discordHeader
 
-	local discordIcon = Instance.new("TextLabel")
-	discordIcon.Size = UDim2.fromOffset(24, 24)
-	discordIcon.Position = UDim2.fromOffset(12, 6)
-	discordIcon.BackgroundTransparency = 1
-	discordIcon.Text = "💬"
-	discordIcon.TextScaled = true
-	discordIcon.Parent = discordHeader
+		local discordIcon = Instance.new("TextLabel")
+		discordIcon.Size = UDim2.fromOffset(24, 24)
+		discordIcon.Position = UDim2.fromOffset(12, 6)
+		discordIcon.BackgroundTransparency = 1
+		discordIcon.Text = "💬"
+		discordIcon.TextScaled = true
+		discordIcon.Parent = discordHeader
 
-	local discordLabel = Instance.new("TextLabel")
-	discordLabel.Size = UDim2.new(1, -50, 0, 35)
-	discordLabel.Position = UDim2.fromOffset(40, 0)
-	discordLabel.BackgroundTransparency = 1
-	discordLabel.Text = "Join Communication Channel"
-	discordLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	discordLabel.TextSize = currentDimensions.textSize + 1
-	discordLabel.TextXAlignment = Enum.TextXAlignment.Left
-	discordLabel.TextYAlignment = Enum.TextYAlignment.Center
-	discordLabel.Font = Enum.Font.GothamBold
-	discordLabel.Parent = discordHeader
+		local discordLabel = Instance.new("TextLabel")
+		discordLabel.Size = UDim2.new(1, -50, 0, 35)
+		discordLabel.Position = UDim2.fromOffset(40, 0)
+		discordLabel.BackgroundTransparency = 1
+		discordLabel.Text = "Join Communication Channel"
+		discordLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		discordLabel.TextSize = currentDimensions.textSize + 1
+		discordLabel.TextXAlignment = Enum.TextXAlignment.Left
+		discordLabel.TextYAlignment = Enum.TextYAlignment.Center
+		discordLabel.Font = Enum.Font.GothamBold
+		discordLabel.Parent = discordHeader
+	end
 
-	-- Discord URL section
+	-- Discord URL section (mobile and desktop)
 	local urlContainer = Instance.new("Frame")
-	urlContainer.Size = UDim2.new(1, -20, 0, 55)
-	urlContainer.Position = UDim2.fromOffset(10, 40)
+	urlContainer.Size = UDim2.new(1, isMobile and -8 or -20, 0, isMobile and 25 or 55) -- Reduced from 35 to 25 for mobile
+	urlContainer.Position = UDim2.fromOffset(isMobile and 4 or 10, isMobile and 6 or 40) -- Adjusted position
 	urlContainer.BackgroundTransparency = 1
 	urlContainer.Parent = discordFrame
 
-	local copyInstructionLabel = Instance.new("TextLabel")
-	copyInstructionLabel.Size = UDim2.new(1, 0, 0, 18)
-	copyInstructionLabel.Position = UDim2.fromOffset(0, 0)
-	copyInstructionLabel.BackgroundTransparency = 1
-	copyInstructionLabel.Text = "Click the link below to select and copy:"
-	copyInstructionLabel.TextColor3 = Color3.fromRGB(185, 187, 190)
-	copyInstructionLabel.TextSize = currentDimensions.textSize - 2
-	copyInstructionLabel.TextXAlignment = Enum.TextXAlignment.Left
-	copyInstructionLabel.Font = Enum.Font.Gotham
-	copyInstructionLabel.Parent = urlContainer
+	if not isMobile then
+		local copyInstructionLabel = Instance.new("TextLabel")
+		copyInstructionLabel.Size = UDim2.new(1, 0, 0, 18)
+		copyInstructionLabel.Position = UDim2.fromOffset(0, 0)
+		copyInstructionLabel.BackgroundTransparency = 1
+		copyInstructionLabel.Text = "Click the link below to select and copy:"
+		copyInstructionLabel.TextColor3 = Color3.fromRGB(185, 187, 190)
+		copyInstructionLabel.TextSize = currentDimensions.textSize - 2
+		copyInstructionLabel.TextXAlignment = Enum.TextXAlignment.Left
+		copyInstructionLabel.Font = Enum.Font.Gotham
+		copyInstructionLabel.Parent = urlContainer
+	end
 
 	local discordUrl = Instance.new("TextBox")
-	discordUrl.Size = UDim2.new(1, 0, 0, 32)
-	discordUrl.Position = UDim2.fromOffset(0, 20)
+	discordUrl.Size = UDim2.new(1, 0, 0, isMobile and 18 or 32) -- Reduced from 22 to 18 for mobile
+	discordUrl.Position = UDim2.fromOffset(0, isMobile and 0 or 20)
 	discordUrl.BackgroundColor3 = Color3.fromRGB(64, 68, 75)
 	discordUrl.BorderSizePixel = 0
 	discordUrl.Text = selectedGame.discordUrl
 	discordUrl.TextColor3 = Color3.fromRGB(114, 137, 218)
-	discordUrl.TextSize = currentDimensions.textSize
+	discordUrl.TextSize = isMobile and currentDimensions.textSize - 1 or currentDimensions.textSize
 	discordUrl.TextXAlignment = Enum.TextXAlignment.Center
 	discordUrl.TextYAlignment = Enum.TextYAlignment.Center
 	discordUrl.Font = Enum.Font.GothamMedium
@@ -404,8 +482,22 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	discordUrl.Parent = urlContainer
 
 	local urlCorner = Instance.new("UICorner")
-	urlCorner.CornerRadius = UDim.new(0, 6)
+	urlCorner.CornerRadius = UDim.new(0, isMobile and 4 or 6)
 	urlCorner.Parent = discordUrl
+
+	if isMobile then
+		-- Mobile instruction below URL
+		local mobileInstruction = Instance.new("TextLabel")
+		mobileInstruction.Size = UDim2.new(1, 0, 0, 8) -- Reduced from 10 to 8
+		mobileInstruction.Position = UDim2.fromOffset(0, 20) -- Adjusted position
+		mobileInstruction.BackgroundTransparency = 1
+		mobileInstruction.Text = "Tap to copy"
+		mobileInstruction.TextColor3 = Color3.fromRGB(185, 187, 190)
+		mobileInstruction.TextSize = currentDimensions.textSize - 3
+		mobileInstruction.TextXAlignment = Enum.TextXAlignment.Center
+		mobileInstruction.Font = Enum.Font.Gotham
+		mobileInstruction.Parent = urlContainer
+	end
 
 	-- Add a subtle border/highlight effect
 	local urlStroke = Instance.new("UIStroke")
@@ -414,158 +506,313 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	urlStroke.Thickness = 1
 	urlStroke.Parent = discordUrl
 
-	-- Gamemode selector (if multiple games available)
-	local gamemodeY = currentDimensions.titleSize + 200
+	-- Mobile/Desktop image and description layout
+	if isMobile and (hasImage or hasDescription) then
+		-- Create horizontal container for image and description
+		local mediaContainer = Instance.new("Frame")
+		mediaContainer.Name = "MediaContainer"
+		mediaContainer.Size = UDim2.new(1, -16, 0, currentDimensions.imageSize + 10)
+		mediaContainer.Position = UDim2.fromOffset(8, currentY)
+		mediaContainer.BackgroundTransparency = 1
+		mediaContainer.Parent = contentFrame
+
+		if hasImage then
+			-- Image on the left
+			local gameImage = Instance.new("ImageLabel")
+			gameImage.Size = UDim2.fromOffset(currentDimensions.imageSize, currentDimensions.imageSize)
+			gameImage.Position = UDim2.fromOffset(0, 0)
+			gameImage.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+			gameImage.BorderSizePixel = 0
+			gameImage.Image = selectedGame.imageUrl
+			gameImage.ScaleType = Enum.ScaleType.Crop
+			gameImage.Parent = mediaContainer
+
+			local imageCorner = Instance.new("UICorner")
+			imageCorner.CornerRadius = UDim.new(0, 8)
+			imageCorner.Parent = gameImage
+		end
+
+		if hasDescription then
+			-- Description on the right
+			local descFrame = Instance.new("ScrollingFrame")
+			descFrame.Size =
+				UDim2.new(1, hasImage and -(currentDimensions.imageSize + 10) or -5, 0, currentDimensions.imageSize)
+			descFrame.Position = UDim2.fromOffset(hasImage and (currentDimensions.imageSize + 10) or 0, 0)
+			descFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+			descFrame.BorderSizePixel = 0
+			descFrame.ScrollBarThickness = 3
+			descFrame.Parent = mediaContainer
+
+			local descCorner = Instance.new("UICorner")
+			descCorner.CornerRadius = UDim.new(0, 6)
+			descCorner.Parent = descFrame
+
+			local descLabel = Instance.new("TextLabel")
+			descLabel.Size = UDim2.new(1, -10, 0, 0)
+			descLabel.Position = UDim2.fromOffset(5, 5)
+			descLabel.BackgroundTransparency = 1
+			descLabel.Text = selectedGame.description
+			descLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+			descLabel.TextSize = currentDimensions.textSize
+			descLabel.TextXAlignment = Enum.TextXAlignment.Left
+			descLabel.TextYAlignment = Enum.TextYAlignment.Top
+			descLabel.TextWrapped = true
+			descLabel.Font = Enum.Font.Gotham
+			descLabel.Parent = descFrame
+
+			-- Calculate required height for description
+			local textService = game:GetService("TextService")
+			local textSize = textService:GetTextSize(
+				selectedGame.description,
+				currentDimensions.textSize,
+				Enum.Font.Gotham,
+				Vector2.new(descFrame.AbsoluteSize.X - 10, math.huge)
+			)
+			descLabel.Size = UDim2.new(1, -10, 0, math.max(textSize.Y + 10, currentDimensions.imageSize - 10))
+			descFrame.CanvasSize = UDim2.fromOffset(0, textSize.Y + 20)
+		end
+
+		currentY = currentY + currentDimensions.imageSize + 20
+	end
+
+	-- Gamemode selector (if multiple games available) - mobile responsive
+	local gamemodeY = isMobile and currentY or currentDimensions.titleSize + 200
 	if currentTeleportData and #currentTeleportData > 1 then
-		-- Gamemode selector frame
-		local gamemodeFrame = Instance.new("Frame")
-		gamemodeFrame.Name = "GamemodeFrame"
-		gamemodeFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 60)
-		gamemodeFrame.Position = UDim2.fromOffset(currentDimensions.padding, gamemodeY)
-		gamemodeFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
-		gamemodeFrame.BorderSizePixel = 0
-		gamemodeFrame.Parent = contentFrame
+		if isMobile then
+			-- Mobile: Horizontal scrollable button list
+			local gamemodeContainer = Instance.new("Frame")
+			gamemodeContainer.Name = "GamemodeContainer"
+			gamemodeContainer.Size = UDim2.new(1, -16, 0, 50)
+			gamemodeContainer.Position = UDim2.fromOffset(8, currentY)
+			gamemodeContainer.BackgroundTransparency = 1
+			gamemodeContainer.Parent = contentFrame
 
-		local gamemodeCorner = Instance.new("UICorner")
-		gamemodeCorner.CornerRadius = UDim.new(0, 8)
-		gamemodeCorner.Parent = gamemodeFrame
+			-- Title label
+			local modeLabel = Instance.new("TextLabel")
+			modeLabel.Size = UDim2.new(1, 0, 0, 15)
+			modeLabel.Position = UDim2.fromOffset(0, 0)
+			modeLabel.BackgroundTransparency = 1
+			modeLabel.Text = "Game Modes:"
+			modeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+			modeLabel.TextSize = currentDimensions.textSize
+			modeLabel.TextXAlignment = Enum.TextXAlignment.Left
+			modeLabel.Font = Enum.Font.GothamBold
+			modeLabel.Parent = gamemodeContainer
 
-		-- Gamemode label
-		local gamemodeLabel = Instance.new("TextLabel")
-		gamemodeLabel.Size = UDim2.new(1, -20, 0, 25)
-		gamemodeLabel.Position = UDim2.fromOffset(10, 5)
-		gamemodeLabel.BackgroundTransparency = 1
-		gamemodeLabel.Text = "Select Gamemode:"
-		gamemodeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		gamemodeLabel.TextSize = currentDimensions.textSize
-		gamemodeLabel.TextXAlignment = Enum.TextXAlignment.Left
-		gamemodeLabel.Font = Enum.Font.GothamBold
-		gamemodeLabel.Parent = gamemodeFrame
+			-- Scrollable frame for buttons
+			local buttonScrollFrame = Instance.new("ScrollingFrame")
+			buttonScrollFrame.Size = UDim2.new(1, 0, 0, 30)
+			buttonScrollFrame.Position = UDim2.fromOffset(0, 18)
+			buttonScrollFrame.BackgroundTransparency = 1
+			buttonScrollFrame.BorderSizePixel = 0
+			buttonScrollFrame.ScrollBarThickness = 3
+			buttonScrollFrame.ScrollingDirection = Enum.ScrollingDirection.X
+			buttonScrollFrame.HorizontalScrollBarInset = Enum.ScrollBarInset.None
+			buttonScrollFrame.Parent = gamemodeContainer
 
-		-- Gamemode dropdown
-		local gamemodeDropdown = Instance.new("TextButton")
-		gamemodeDropdown.Name = "GamemodeDropdown"
-		gamemodeDropdown.Size = UDim2.new(1, -20, 0, 25)
-		gamemodeDropdown.Position = UDim2.fromOffset(10, 30)
-		gamemodeDropdown.BackgroundColor3 = Color3.fromRGB(70, 70, 75)
-		gamemodeDropdown.BorderSizePixel = 0
-		gamemodeDropdown.Text = selectedGame.title .. " ▼"
-		gamemodeDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
-		gamemodeDropdown.TextSize = currentDimensions.textSize - 2
-		gamemodeDropdown.TextXAlignment = Enum.TextXAlignment.Left
-		gamemodeDropdown.Font = Enum.Font.Gotham
-		gamemodeDropdown.Parent = gamemodeFrame
+			-- Calculate total width needed for all buttons
+			local totalWidth = 0
+			local buttonWidth = 80
+			local buttonSpacing = 8
 
-		local dropdownCorner = Instance.new("UICorner")
-		dropdownCorner.CornerRadius = UDim.new(0, 4)
-		dropdownCorner.Parent = gamemodeDropdown
+			-- Create buttons for each gamemode
+			for _, gameData in ipairs(currentTeleportData) do
+				local isSelected = gameData.title == selectedGame.title
 
-		-- Dropdown functionality
-		local dropdownOpen = false
-		local dropdownList = nil
+				local modeButton = Instance.new("TextButton")
+				modeButton.Size = UDim2.fromOffset(buttonWidth, 26)
+				modeButton.Position = UDim2.fromOffset(totalWidth, 2)
+				modeButton.BackgroundColor3 = isSelected and Color3.fromRGB(70, 120, 180) or Color3.fromRGB(70, 70, 75)
+				modeButton.BorderSizePixel = 0
+				modeButton.Text = gameData.title
+				modeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+				modeButton.TextSize = currentDimensions.textSize - 2
+				modeButton.TextScaled = true
+				modeButton.Font = isSelected and Enum.Font.GothamBold or Enum.Font.Gotham
+				modeButton.Parent = buttonScrollFrame
 
-		gamemodeDropdown.MouseButton1Click:Connect(function()
-			print("[TP Client Debug] Gamemode dropdown clicked, dropdownOpen:", dropdownOpen)
-			if dropdownOpen then
-				-- Close dropdown
-				print("[TP Client Debug] Closing dropdown")
-				if dropdownList then
-					dropdownList:Destroy()
-					dropdownList = nil
-				end
-				dropdownOpen = false
-				gamemodeDropdown.Text = selectedGame.title .. " ▼"
-			else
-				-- Open dropdown
-				print("[TP Client Debug] Opening dropdown")
-				dropdownOpen = true
-				gamemodeDropdown.Text = selectedGame.title .. " ▲"
+				local buttonCorner = Instance.new("UICorner")
+				buttonCorner.CornerRadius = UDim.new(0, 4)
+				buttonCorner.Parent = modeButton
 
-				-- Create dropdown list
-				dropdownList = Instance.new("Frame")
-				dropdownList.Name = "DropdownList"
-				dropdownList.Size = UDim2.new(1, 0, 0, #currentTeleportData * 30)
-				dropdownList.Position = UDim2.fromOffset(0, 60)
-				dropdownList.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
-				dropdownList.BorderSizePixel = 0
-				dropdownList.ZIndex = 100  -- Much higher ZIndex to ensure it's on top
-				dropdownList.ClipsDescendants = false
-				dropdownList.Parent = backgroundFrame  -- Parent to main frame instead of gamemode frame to avoid clipping
+				-- Button click handler
+				modeButton.MouseButton1Click:Connect(function()
+					print("[TP Client Debug] Mode button clicked:", gameData.title)
+					-- Update selected game and refresh UI
+					updateGuiForSelectedGame(backgroundFrame, gameData, currentDimensions)
+				end)
 
-				-- Adjust position relative to backgroundFrame instead of gamemodeFrame
-				local gamemodeFramePos = gamemodeFrame.Position
-				local gamemodeFrameSize = gamemodeFrame.Size
-				dropdownList.Position = UDim2.new(
-					gamemodeFramePos.X.Scale, 
-					gamemodeFramePos.X.Offset, 
-					gamemodeFramePos.Y.Scale, 
-					gamemodeFramePos.Y.Offset + gamemodeFrameSize.Y.Offset
-				)
-				dropdownList.Size = UDim2.new(gamemodeFrameSize.X.Scale, gamemodeFrameSize.X.Offset - 20, 0, #currentTeleportData * 30)
-
-				local listCorner = Instance.new("UICorner")
-				listCorner.CornerRadius = UDim.new(0, 4)
-				listCorner.Parent = dropdownList
-
-				-- Create buttons for each gamemode
-				print("[TP Client Debug] Creating dropdown options for", #currentTeleportData, "games")
-				for i, gameData in ipairs(currentTeleportData) do
-					print("[TP Client Debug] Game", i, ":", gameData.title)
-					local optionButton = Instance.new("TextButton")
-					optionButton.Size = UDim2.new(1, -10, 0, 25)
-					optionButton.Position = UDim2.fromOffset(5, (i - 1) * 30 + 2)
-					optionButton.BackgroundColor3 = gameData.title == selectedGame.title
-							and Color3.fromRGB(70, 120, 180)
-						or Color3.fromRGB(70, 70, 75)
-					optionButton.BorderSizePixel = 0
-					optionButton.Text = gameData.title
-					optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-					optionButton.TextSize = currentDimensions.textSize - 2
-					optionButton.TextXAlignment = Enum.TextXAlignment.Left
-					optionButton.Font = Enum.Font.Gotham
-					optionButton.ZIndex = 101  -- Higher than dropdown list
-					optionButton.Parent = dropdownList
-
-					local optionCorner = Instance.new("UICorner")
-					optionCorner.CornerRadius = UDim.new(0, 3)
-					optionCorner.Parent = optionButton
-
-					-- Option click handler
-					optionButton.MouseButton1Click:Connect(function()
-						print("[TP Client Debug] Option clicked:", gameData.title)
-						-- Update selected game
-						updateGuiForSelectedGame(backgroundFrame, gameData, currentDimensions)
-
-						-- Close dropdown
-						if dropdownList then
-							dropdownList:Destroy()
-							dropdownList = nil
-						end
-						dropdownOpen = false
-					end)
-				end
+				totalWidth = totalWidth + buttonWidth + buttonSpacing
 			end
-		end)
 
-		gamemodeY = gamemodeY + 80
+			-- Set canvas size for horizontal scrolling
+			buttonScrollFrame.CanvasSize = UDim2.fromOffset(totalWidth - buttonSpacing, 30)
+			currentY = currentY + 60
+		else
+			-- Desktop: Traditional dropdown
+			local gamemodeFrame = Instance.new("Frame")
+			gamemodeFrame.Name = "GamemodeFrame"
+			gamemodeFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 60)
+			gamemodeFrame.Position = UDim2.fromOffset(currentDimensions.padding, gamemodeY)
+			gamemodeFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
+			gamemodeFrame.BorderSizePixel = 0
+			gamemodeFrame.Parent = contentFrame
+
+			local gamemodeCorner = Instance.new("UICorner")
+			gamemodeCorner.CornerRadius = UDim.new(0, 8)
+			gamemodeCorner.Parent = gamemodeFrame
+
+			-- Gamemode label
+			local gamemodeLabel = Instance.new("TextLabel")
+			gamemodeLabel.Size = UDim2.new(1, -20, 0, 25)
+			gamemodeLabel.Position = UDim2.fromOffset(10, 5)
+			gamemodeLabel.BackgroundTransparency = 1
+			gamemodeLabel.Text = "Select Gamemode:"
+			gamemodeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+			gamemodeLabel.TextSize = currentDimensions.textSize
+			gamemodeLabel.TextXAlignment = Enum.TextXAlignment.Left
+			gamemodeLabel.TextYAlignment = Enum.TextYAlignment.Center
+			gamemodeLabel.Font = Enum.Font.GothamBold
+			gamemodeLabel.Parent = gamemodeFrame
+
+			-- Gamemode dropdown
+			local gamemodeDropdown = Instance.new("TextButton")
+			gamemodeDropdown.Name = "GamemodeDropdown"
+			gamemodeDropdown.Size = UDim2.new(1, -20, 0, 25)
+			gamemodeDropdown.Position = UDim2.fromOffset(10, 30)
+			gamemodeDropdown.BackgroundColor3 = Color3.fromRGB(70, 70, 75)
+			gamemodeDropdown.BorderSizePixel = 0
+			gamemodeDropdown.Text = selectedGame.title .. " ▼"
+			gamemodeDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
+			gamemodeDropdown.TextSize = currentDimensions.textSize - 2
+			gamemodeDropdown.TextXAlignment = Enum.TextXAlignment.Left
+			gamemodeDropdown.Font = Enum.Font.Gotham
+			gamemodeDropdown.Parent = gamemodeFrame
+
+			local dropdownCorner = Instance.new("UICorner")
+			dropdownCorner.CornerRadius = UDim.new(0, 4)
+			dropdownCorner.Parent = gamemodeDropdown
+
+			-- Dropdown functionality (existing desktop code)
+			local dropdownOpen = false
+			local dropdownList = nil
+
+			gamemodeDropdown.MouseButton1Click:Connect(function()
+				print("[TP Client Debug] Gamemode dropdown clicked, dropdownOpen:", dropdownOpen)
+				if dropdownOpen then
+					-- Close dropdown
+					print("[TP Client Debug] Closing dropdown")
+					if dropdownList then
+						dropdownList:Destroy()
+						dropdownList = nil
+					end
+					dropdownOpen = false
+					gamemodeDropdown.Text = selectedGame.title .. " ▼"
+				else
+					-- Open dropdown
+					print("[TP Client Debug] Opening dropdown")
+					dropdownOpen = true
+					gamemodeDropdown.Text = selectedGame.title .. " ▲"
+
+					-- Create dropdown list
+					dropdownList = Instance.new("Frame")
+					dropdownList.Name = "DropdownList"
+					dropdownList.Size = UDim2.new(1, 0, 0, #currentTeleportData * 30)
+					dropdownList.Position = UDim2.fromOffset(0, 60)
+					dropdownList.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+					dropdownList.BorderSizePixel = 0
+					dropdownList.ZIndex = 100 -- Much higher ZIndex to ensure it's on top
+					dropdownList.ClipsDescendants = false
+					dropdownList.Parent = backgroundFrame -- Parent to main frame instead of gamemode frame to avoid clipping
+
+					-- Adjust position relative to backgroundFrame instead of gamemodeFrame
+					local gamemodeFramePos = gamemodeFrame.Position
+					local gamemodeFrameSize = gamemodeFrame.Size
+					dropdownList.Position = UDim2.new(
+						gamemodeFramePos.X.Scale,
+						gamemodeFramePos.X.Offset,
+						gamemodeFramePos.Y.Scale,
+						gamemodeFramePos.Y.Offset + gamemodeFrameSize.Y.Offset
+					)
+					dropdownList.Size = UDim2.new(
+						gamemodeFrameSize.X.Scale,
+						gamemodeFrameSize.X.Offset - 20,
+						0,
+						#currentTeleportData * 30
+					)
+
+					local listCorner = Instance.new("UICorner")
+					listCorner.CornerRadius = UDim.new(0, 4)
+					listCorner.Parent = dropdownList
+
+					-- Create buttons for each gamemode
+					print("[TP Client Debug] Creating dropdown options for", #currentTeleportData, "games")
+					for i, gameData in ipairs(currentTeleportData) do
+						print("[TP Client Debug] Game", i, ":", gameData.title)
+						local optionButton = Instance.new("TextButton")
+						optionButton.Size = UDim2.new(1, -10, 0, 25)
+						optionButton.Position = UDim2.fromOffset(5, (i - 1) * 30 + 2)
+						optionButton.BackgroundColor3 = gameData.title == selectedGame.title
+								and Color3.fromRGB(70, 120, 180)
+							or Color3.fromRGB(70, 70, 75)
+						optionButton.BorderSizePixel = 0
+						optionButton.Text = gameData.title
+						optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+						optionButton.TextSize = currentDimensions.textSize - 2
+						optionButton.TextXAlignment = Enum.TextXAlignment.Left
+						optionButton.Font = Enum.Font.Gotham
+						optionButton.ZIndex = 101 -- Higher than dropdown list
+						optionButton.Parent = dropdownList
+
+						local optionCorner = Instance.new("UICorner")
+						optionCorner.CornerRadius = UDim.new(0, 3)
+						optionCorner.Parent = optionButton
+
+						-- Option click handler
+						optionButton.MouseButton1Click:Connect(function()
+							print("[TP Client Debug] Option clicked:", gameData.title)
+							-- Update selected game
+							updateGuiForSelectedGame(backgroundFrame, gameData, currentDimensions)
+
+							-- Close dropdown
+							if dropdownList then
+								dropdownList:Destroy()
+								dropdownList = nil
+							end
+							dropdownOpen = false
+						end)
+					end
+				end
+			end)
+
+			gamemodeY = gamemodeY + 80
+		end
 	end
 
 	-- Play button
 	local playButton = Instance.new("TextButton")
 	playButton.Name = "PlayButton"
-	playButton.Size =
-		UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.buttonHeight)
-	playButton.Position = UDim2.fromOffset(currentDimensions.padding, gamemodeY + 20)
-	playButton.BackgroundColor3 = Color3.fromRGB(40, 167, 69)
+	if isMobile then
+		playButton.Size = UDim2.new(1, -16, 0, currentDimensions.buttonHeight)
+		playButton.Position = UDim2.fromOffset(8, currentY)
+		currentY = currentY + currentDimensions.buttonHeight + 10
+	else
+		local playButtonY = gamemodeY + 20
+		playButton.Size =
+			UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.buttonHeight)
+		playButton.Position = UDim2.fromOffset(currentDimensions.padding, playButtonY)
+	end
+	-- Different colors for mobile vs desktop
+	playButton.BackgroundColor3 = isMobile and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(40, 167, 69)
 	playButton.BorderSizePixel = 0
-	playButton.Text = "🎮 Play Game"
+	playButton.Text = isMobile and "📱 MOBILE PLAY" or "🖥️ DESKTOP PLAY GAME"
 	playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	playButton.TextSize = currentDimensions.textSize + 2
+	playButton.TextSize = isMobile and currentDimensions.textSize or currentDimensions.textSize + 2
 	playButton.Font = Enum.Font.GothamBold
 	playButton.Parent = contentFrame
 
 	local playCorner = Instance.new("UICorner")
-	playCorner.CornerRadius = UDim.new(0, 8)
+	playCorner.CornerRadius = UDim.new(0, isMobile and 6 or 8)
 	playCorner.Parent = playButton
 
 	-- Button click handlers
@@ -573,6 +820,11 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 		-- Request teleportation with the selected game's teleport URL, part key, and title
 		teleportPlayerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
 	end)
+
+	-- Update canvas size for mobile scrolling
+	if isMobile then
+		contentFrame.CanvasSize = UDim2.fromOffset(0, currentY)
+	end
 
 	return backgroundFrame
 end
