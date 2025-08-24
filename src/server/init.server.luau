@@ -26,6 +26,10 @@ local teleportFailedRemote = Instance.new("RemoteEvent")
 teleportFailedRemote.Name = "TeleportFailed"
 teleportFailedRemote.Parent = remoteEvents
 
+local reportServerRemote = Instance.new("RemoteEvent")
+reportServerRemote.Name = "ReportServer"
+reportServerRemote.Parent = remoteEvents
+
 -- Cache for game data
 local gameDataCache = {}
 local lastCacheUpdate = 0
@@ -34,6 +38,10 @@ local lastCacheUpdate = 0
 local playerCooldowns = {} -- Track cooldowns per player
 local playersOnParts = {} -- Track which players are currently on teleport parts
 local COOLDOWN_DURATION = 3 -- seconds before player can trigger GUI again
+
+-- Server report cooldown system
+local playerReportCooldowns = {} -- Track report cooldowns per player
+local REPORT_COOLDOWN_DURATION = 30 * 60 -- 30 minutes in seconds
 
 -- Function to fetch game data from Google Sheets
 local function fetchGameData()
@@ -127,6 +135,61 @@ local function updateServerDownCount(partKey)
 	else
 		warn("Failed to update server_down count for: " .. partKey .. " - Error: " .. tostring(responseData))
 	end
+end
+
+-- Function to handle server reports from players
+local function onServerReport(player, tpUrl, partKey, gameTitle)
+	local playerKey = player.UserId
+	local currentTime = tick()
+
+	-- Check if player is on cooldown
+	if playerReportCooldowns[playerKey] then
+		local timeSinceLastReport = currentTime - playerReportCooldowns[playerKey]
+		if timeSinceLastReport < REPORT_COOLDOWN_DURATION then
+			-- Player is still on cooldown
+			local timeLeft = REPORT_COOLDOWN_DURATION - timeSinceLastReport
+			local minutesLeft = math.ceil(timeLeft / 60)
+
+			Config.debugLog(
+				"Player " .. player.Name .. " tried to report but is on cooldown for " .. minutesLeft .. " more minutes"
+			)
+			-- Could send error back to client if needed
+			return
+		end
+	end
+
+	-- Set cooldown for this player
+	playerReportCooldowns[playerKey] = currentTime
+
+	Config.debugLog(
+		"Player "
+			.. player.Name
+			.. " reported server issue for: "
+			.. tostring(gameTitle)
+			.. " (Key: "
+			.. tostring(partKey)
+			.. ")"
+	)
+
+	-- Update server down count
+	updateServerDownCount(partKey)
+
+	-- Log the report for admin tracking
+	print(
+		"SERVER REPORT: Player "
+			.. player.Name
+			.. " ("
+			.. player.UserId
+			.. ") reported "
+			.. tostring(gameTitle)
+			.. " (TP: "
+			.. tostring(tpUrl)
+			.. ") at "
+			.. os.date("%Y-%m-%d %H:%M:%S")
+	)
+
+	-- Optional: Send confirmation back to client (already handled on client side)
+	-- reportServerRemote:FireClient(player, true, "Report sent successfully! Admin will update this link soon.")
 end
 
 -- Function to check if a place exists and is accessible
@@ -401,9 +464,14 @@ teleportPlayerRemote.OnServerEvent:Connect(function(player, tpUrl, partKey, game
 	onTeleportPlayer(player, tpUrl, partKey, gameTitle)
 end)
 
+reportServerRemote.OnServerEvent:Connect(function(player, tpUrl, partKey, gameTitle)
+	onServerReport(player, tpUrl, partKey, gameTitle)
+end)
+
 -- Clean up cooldowns when players leave
 Players.PlayerRemoving:Connect(function(player)
 	playerCooldowns[player.UserId] = nil
+	playerReportCooldowns[player.UserId] = nil
 
 	-- Clean up all part tracking for this player
 	local playerKey = player.UserId

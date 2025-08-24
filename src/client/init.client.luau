@@ -11,6 +11,7 @@ local remoteEvents = game.ReplicatedStorage:WaitForChild("RemoteEvents")
 local showTpGuiRemote = remoteEvents:WaitForChild("ShowTpGui")
 local teleportPlayerRemote = remoteEvents:WaitForChild("TeleportPlayer")
 local teleportFailedRemote = remoteEvents:WaitForChild("TeleportFailed")
+local reportServerRemote = remoteEvents:WaitForChild("ReportServer")
 
 print("[TP Client Debug] RemoteEvents found successfully")
 print("[TP Client Debug] ShowTpGui:", showTpGuiRemote)
@@ -20,19 +21,13 @@ print("[TP Client Debug] TeleportFailed:", teleportFailedRemote)
 -- Variables
 local teleportGui = nil
 local currentTeleportData = nil
+local lastReportTime = 0 -- Track last report time for cooldown
+local REPORT_COOLDOWN = 30 * 60 -- 30 minutes in seconds
 
 -- Mobile detection
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 -- TEMPORARY: Force mobile mode for testing (remove this line when done testing)
 -- isMobile = true
-print(
-	"[TP Client Debug] Mobile detection - TouchEnabled:",
-	UserInputService.TouchEnabled,
-	"KeyboardEnabled:",
-	UserInputService.KeyboardEnabled,
-	"isMobile:",
-	isMobile
-)
 
 -- Responsive dimensions
 local function getResponsiveDimensions()
@@ -50,7 +45,6 @@ local function getResponsiveDimensions()
 			buttonHeight = 35,
 			sidebarWidth = 0, -- No sidebar on mobile
 		}
-		print("[TP Client Debug] Using mobile dimensions:", mobileDimensions.width, "x", mobileDimensions.height)
 		return mobileDimensions
 	else
 		-- Desktop dimensions
@@ -64,7 +58,6 @@ local function getResponsiveDimensions()
 			buttonHeight = 50,
 			sidebarWidth = 200,
 		}
-		print("[TP Client Debug] Using desktop dimensions:", desktopDimensions.width, "x", desktopDimensions.height)
 		return desktopDimensions
 	end
 end
@@ -129,6 +122,66 @@ local function showErrorMessage(message)
 	end)
 end
 
+-- Function to show success messages
+local function showSuccessMessage(message)
+	-- Create success notification
+	local successGui = Instance.new("ScreenGui")
+	successGui.Name = "SuccessNotification"
+	successGui.Parent = playerGui
+
+	local successFrame = Instance.new("Frame")
+	successFrame.Size = UDim2.fromOffset(400, 120)
+	successFrame.Position = UDim2.new(0.5, -200, 0, -150)
+	successFrame.BackgroundColor3 = Color3.fromRGB(40, 167, 69)
+	successFrame.BorderSizePixel = 0
+	successFrame.Parent = successGui
+
+	local successCorner = Instance.new("UICorner")
+	successCorner.CornerRadius = UDim.new(0, 12)
+	successCorner.Parent = successFrame
+
+	local successTitle = Instance.new("TextLabel")
+	successTitle.Size = UDim2.new(1, -20, 0, 30)
+	successTitle.Position = UDim2.fromOffset(10, 10)
+	successTitle.BackgroundTransparency = 1
+	successTitle.Text = "✅ Report Sent"
+	successTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	successTitle.TextScaled = true
+	successTitle.TextXAlignment = Enum.TextXAlignment.Left
+	successTitle.Font = Enum.Font.GothamBold
+	successTitle.Parent = successFrame
+
+	local successText = Instance.new("TextLabel")
+	successText.Size = UDim2.new(1, -20, 0, 60)
+	successText.Position = UDim2.fromOffset(10, 45)
+	successText.BackgroundTransparency = 1
+	successText.Text = message
+	successText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	successText.TextScaled = true
+	successText.TextXAlignment = Enum.TextXAlignment.Left
+	successText.TextYAlignment = Enum.TextYAlignment.Top
+	successText.TextWrapped = true
+	successText.Font = Enum.Font.Gotham
+	successText.Parent = successFrame
+
+	-- Animate in
+	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	local tween = TweenService:Create(successFrame, tweenInfo, {
+		Position = UDim2.new(0.5, -200, 0, 20),
+	})
+	tween:Play()
+
+	-- Auto-hide after 4 seconds
+	wait(4)
+	local tweenOut = TweenService:Create(successFrame, tweenInfo, {
+		Position = UDim2.new(0.5, -200, 0, -150),
+	})
+	tweenOut:Play()
+	tweenOut.Completed:Connect(function()
+		successGui:Destroy()
+	end)
+end
+
 -- Function to create the teleport GUI
 local function createTeleportGui()
 	-- Destroy existing GUI if any
@@ -138,14 +191,6 @@ local function createTeleportGui()
 
 	-- Get responsive dimensions
 	local currentDimensions = getResponsiveDimensions()
-	print(
-		"[TP Client Debug] Creating GUI with dimensions:",
-		currentDimensions.width,
-		"x",
-		currentDimensions.height,
-		"isMobile:",
-		isMobile
-	)
 
 	-- Create main GUI
 	teleportGui = Instance.new("ScreenGui")
@@ -342,8 +387,8 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 		titleLabel.Position = UDim2.fromOffset(currentDimensions.padding, 0)
 	end
 	titleLabel.BackgroundTransparency = 1
-	-- Add mobile indicator to title for testing
-	titleLabel.Text = (isMobile and "📱 MOBILE: " or "🖥️ DESKTOP: ") .. selectedGame.title
+	-- Clean professional title without debug indicators
+	titleLabel.Text = selectedGame.title
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.TextSize = currentDimensions.titleSize
 	titleLabel.TextXAlignment = isMobile and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
@@ -364,19 +409,10 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 		instructionLabel.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 20)
 	end
 	instructionLabel.BackgroundTransparency = 1
-	-- Show dimensions in instruction text for debugging
-	local dimensionText = string.format(
-		"Size: %dx%d | Text: %d",
-		currentDimensions.width,
-		currentDimensions.height,
-		currentDimensions.textSize
-	)
-	instructionLabel.Text = isMobile and ("📱 " .. dimensionText .. " | Copy Discord link, then play!")
-		or (
-			"🖥️ "
-			.. dimensionText
-			.. " | Copy the Discord URL below to join the communication channel, then teleport to the game!"
-		)
+	-- Clean professional instruction text
+	instructionLabel.Text = isMobile
+			and "Copy the Discord URL below to join the communication channel you can scroll down to see content"
+		or "Copy the Discord URL below to join the communication channel"
 	instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 	instructionLabel.TextSize = currentDimensions.textSize
 	instructionLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -484,20 +520,6 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	local urlCorner = Instance.new("UICorner")
 	urlCorner.CornerRadius = UDim.new(0, isMobile and 4 or 6)
 	urlCorner.Parent = discordUrl
-
-	if isMobile then
-		-- Mobile instruction below URL
-		local mobileInstruction = Instance.new("TextLabel")
-		mobileInstruction.Size = UDim2.new(1, 0, 0, 8) -- Reduced from 10 to 8
-		mobileInstruction.Position = UDim2.fromOffset(0, 20) -- Adjusted position
-		mobileInstruction.BackgroundTransparency = 1
-		mobileInstruction.Text = "Tap to copy"
-		mobileInstruction.TextColor3 = Color3.fromRGB(185, 187, 190)
-		mobileInstruction.TextSize = currentDimensions.textSize - 3
-		mobileInstruction.TextXAlignment = Enum.TextXAlignment.Center
-		mobileInstruction.Font = Enum.Font.Gotham
-		mobileInstruction.Parent = urlContainer
-	end
 
 	-- Add a subtle border/highlight effect
 	local urlStroke = Instance.new("UIStroke")
@@ -789,7 +811,7 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 		end
 	end
 
-	-- Play button
+	-- Play button (full width)
 	local playButton = Instance.new("TextButton")
 	playButton.Name = "PlayButton"
 	if isMobile then
@@ -805,7 +827,7 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	-- Different colors for mobile vs desktop
 	playButton.BackgroundColor3 = isMobile and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(40, 167, 69)
 	playButton.BorderSizePixel = 0
-	playButton.Text = isMobile and "📱 MOBILE PLAY" or "🖥️ DESKTOP PLAY GAME"
+	playButton.Text = isMobile and "🎮 Play" or "🎮 Play Game"
 	playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	playButton.TextSize = isMobile and currentDimensions.textSize or currentDimensions.textSize + 2
 	playButton.Font = Enum.Font.GothamBold
@@ -815,10 +837,71 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	playCorner.CornerRadius = UDim.new(0, isMobile and 6 or 8)
 	playCorner.Parent = playButton
 
+	-- Report button (full width, under play button)
+	local reportButton = Instance.new("TextButton")
+	reportButton.Name = "ReportButton"
+	if isMobile then
+		reportButton.Size = UDim2.new(1, -16, 0, currentDimensions.buttonHeight * 0.8) -- Slightly smaller height
+		reportButton.Position = UDim2.fromOffset(8, currentY)
+		currentY = currentY + (currentDimensions.buttonHeight * 0.8) + 10
+	else
+		local reportButtonY = (gamemodeY + 20) + currentDimensions.buttonHeight + 10
+		reportButton.Size = UDim2.new(
+			1,
+			hasImage and -currentDimensions.sidebarWidth - 20 or -20,
+			0,
+			currentDimensions.buttonHeight * 0.8
+		)
+		reportButton.Position = UDim2.fromOffset(currentDimensions.padding, reportButtonY)
+	end
+	reportButton.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+	reportButton.BorderSizePixel = 0
+	reportButton.Text = isMobile and "⚠️ Report Server Down" or "⚠️ ReportServer Down"
+	reportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	reportButton.TextSize = isMobile and currentDimensions.textSize - 1 or currentDimensions.textSize
+	reportButton.Font = Enum.Font.GothamBold
+	reportButton.Parent = contentFrame
+
+	local reportCorner = Instance.new("UICorner")
+	reportCorner.CornerRadius = UDim.new(0, isMobile and 6 or 8)
+	reportCorner.Parent = reportButton
+
 	-- Button click handlers
 	playButton.MouseButton1Click:Connect(function()
 		-- Request teleportation with the selected game's teleport URL, part key, and title
 		teleportPlayerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
+	end)
+
+	reportButton.MouseButton1Click:Connect(function()
+		-- Check cooldown
+		local currentTime = tick()
+		local timeSinceLastReport = currentTime - lastReportTime
+
+		if timeSinceLastReport < REPORT_COOLDOWN then
+			-- Still on cooldown
+			local timeLeft = REPORT_COOLDOWN - timeSinceLastReport
+			local minutesLeft = math.ceil(timeLeft / 60)
+
+			spawn(function()
+				showErrorMessage(
+					"You can report again in " .. minutesLeft .. " minutes. Please wait before reporting again."
+				)
+			end)
+			return
+		end
+
+		-- Send report to server
+		reportServerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
+
+		-- Update last report time
+		lastReportTime = currentTime
+
+		-- Show success message
+		spawn(function()
+			showSuccessMessage(
+				"Server report sent successfully! Admin will update this teleport link soon. Thank you for helping improve our service."
+			)
+		end)
 	end)
 
 	-- Update canvas size for mobile scrolling
@@ -906,6 +989,23 @@ teleportFailedRemote.OnClientEvent:Connect(function(errorMessage)
 		teleportGui = nil
 	end
 end)
+
+-- Handle server report responses (if server sends any confirmation)
+if reportServerRemote then
+	reportServerRemote.OnClientEvent:Connect(function(success, message)
+		if success then
+			spawn(function()
+				showSuccessMessage(
+					message or "Server report sent successfully! Admin will update this teleport link soon."
+				)
+			end)
+		else
+			spawn(function()
+				showErrorMessage(message or "Failed to send server report. Please try again later.")
+			end)
+		end
+	end)
+end
 
 print("Teleportation client system loaded!")
 print("[TP Client Debug] Client script initialization complete")
