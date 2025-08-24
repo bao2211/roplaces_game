@@ -1,13 +1,39 @@
 -- Server script for teleportation parts system
+--
+-- SETUP INSTRUCTIONS:
+-- 1. Place this script as a ServerScript in ServerScriptService
+-- 2. Place Config.luau as a ModuleScript named "Config" in ServerScriptService
+-- 3. Place GameData.luau as a ModuleScript named "GameData" in ServerScriptService
+-- 4. Place init.client.luau as a LocalScript in StarterPlayer > StarterPlayerScripts
+--
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 
--- Import shared modules from ReplicatedStorage
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Config = require(Shared:WaitForChild("Config"))
-local GameData = require(Shared:WaitForChild("GameData"))
+-- Import server-side modules (now secure)
+-- Check if modules exist before requiring them
+local Config, GameData
+
+local configModule = script.Parent:FindFirstChild("Config")
+local gameDataModule = script.Parent:FindFirstChild("GameData")
+
+if not configModule then
+	error(
+		"❌ SETUP ERROR: Config ModuleScript not found in ServerScriptService! Please create a ModuleScript named 'Config' in ServerScriptService and copy the content from src/server/Config.luau"
+	)
+end
+
+if not gameDataModule then
+	error(
+		"❌ SETUP ERROR: GameData ModuleScript not found in ServerScriptService! Please create a ModuleScript named 'GameData' in ServerScriptService and copy the content from src/server/GameData.luau"
+	)
+end
+
+Config = require(configModule)
+GameData = require(gameDataModule)
+
+print("✅ Teleport System: Successfully loaded Config and GameData modules")
 
 -- Create RemoteEvents for client-server communication
 local remoteEvents = Instance.new("Folder")
@@ -487,8 +513,13 @@ end)
 -- Initialize game data cache
 if Config.GOOGLE_SCRIPT_URL ~= "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" then
 	fetchGameData()
+	print("✅ Teleportation system initialized! Debug mode: " .. tostring(Config.DEBUG_MODE))
 else
-	warn("Please configure your Google Apps Script URL in the Config module!")
+	warn("⚠️  CONFIGURATION NEEDED: Please configure your Google Apps Script URL in the Config module!")
+	print("📋 Setup Status: Teleport system loaded but needs Google Script URL configuration")
 end
 
-print("Teleportation system initialized! Debug mode: " .. tostring(Config.DEBUG_MODE))
+-- Final setup verification
+print("🎯 Teleport System Setup Complete!")
+print("📁 Files loaded: Config ✅, GameData ✅, RemoteEvents ✅")
+print("🔧 Next steps: Configure Google Script URL in Config module if not done yet")

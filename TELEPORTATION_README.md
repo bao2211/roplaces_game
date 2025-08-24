@@ -45,9 +45,27 @@ A comprehensive teleportation system for Roblox that allows players to touch par
    - Click "Deploy"
 8. Copy the deployment URL
 
-### 3. Roblox Configuration
+### 3. Roblox Studio Setup
 
-1. Open `src/shared/Config.luau`
+#### Quick Setup (Recommended):
+1. Open Roblox Studio
+2. Copy the entire content of `SETUP_HELPER.lua` 
+3. Paste it into the Command Bar in Roblox Studio
+4. Press Enter to automatically create the ModuleScripts
+5. Copy your server script content from `src/server/init.server.luau` into a ServerScript in ServerScriptService
+6. Copy your client script content from `src/client/init.client.luau` into a LocalScript in StarterPlayerScripts
+
+#### Manual Setup:
+1. In Roblox Studio, go to ServerScriptService
+2. Create the following scripts in ServerScriptService:
+   - **ServerScript** named "TeleportSystem" (copy content from `src/server/init.server.luau`)
+   - **ModuleScript** named "Config" (copy content from `src/server/Config.luau`)
+   - **ModuleScript** named "GameData" (copy content from `src/server/GameData.luau`)
+3. In StarterPlayerScripts, create:
+   - **LocalScript** named "TeleportClient" (copy content from `src/client/init.client.luau`)
+
+#### Configuration:
+1. Open the "Config" ModuleScript in ServerScriptService
 2. Replace `YOUR_GOOGLE_APPS_SCRIPT_URL_HERE` with your deployment URL
 3. Adjust other settings as needed (cache duration, colors, etc.)
 4. Set `DEBUG_MODE = true` for initial testing
@@ -84,10 +102,10 @@ src/
 ├── client/
 │   └── init.client.luau     # Client-side GUI and event handling
 ├── server/
-│   └── init.server.luau     # Server-side logic and Google Sheets integration
+│   ├── init.server.luau     # Server-side logic and Google Sheets integration
+│   ├── Config.luau          # Configuration settings (server-side for security)
+│   └── GameData.luau        # Game data types and validation (server-side for security)
 └── shared/
-    ├── Config.luau          # Configuration settings
-    ├── GameData.luau        # Game data types and validation
     └── Hello.luau           # Original file (can be removed)
 ```
 
@@ -114,7 +132,7 @@ src/
 ### Common Issues
 
 1. **"Please configure your Google Apps Script URL"**
-   - Update the URL in `Config.luau`
+   - Update the URL in `server/Config.luau`
 
 2. **GUI not appearing**
    - Check part attributes (`part_type` and `part_key`)
@@ -133,7 +151,7 @@ src/
 
 ### Debug Mode
 
-Enable debug mode in `Config.luau` to see detailed logging:
+Enable debug mode in `server/Config.luau` to see detailed logging:
 ```lua
 Config.DEBUG_MODE = true
 ```
@@ -147,7 +165,7 @@ This will show:
 ## Customization
 
 ### GUI Appearance
-Modify colors and styles in `Config.GUI_SETTINGS`:
+Modify colors and styles in `server/Config.GUI_SETTINGS`:
 ```lua
 Config.GUI_SETTINGS = {
     BACKGROUND_COLOR = Color3.fromRGB(45, 45, 45),
