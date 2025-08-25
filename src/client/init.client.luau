@@ -12,6 +12,7 @@ local showTpGuiRemote = remoteEvents:WaitForChild("ShowTpGui")
 local teleportPlayerRemote = remoteEvents:WaitForChild("TeleportPlayer")
 local teleportFailedRemote = remoteEvents:WaitForChild("TeleportFailed")
 local reportServerRemote = remoteEvents:WaitForChild("ReportServer")
+local showLoadingRemote = remoteEvents:WaitForChild("ShowLoading")
 
 print("[TP Client Debug] RemoteEvents found successfully")
 print("[TP Client Debug] ShowTpGui:", showTpGuiRemote)
@@ -20,6 +21,7 @@ print("[TP Client Debug] TeleportFailed:", teleportFailedRemote)
 
 -- Variables
 local teleportGui = nil
+local loadingGui = nil
 local currentTeleportData = nil
 local selectedGame = nil -- Track the currently selected game globally
 local reportCooldowns = {} -- Track cooldown per gamemode/part: [partKey_tpUrl] = lastReportTime
@@ -884,7 +886,7 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 			UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.buttonHeight)
 		playButton.Position = UDim2.fromOffset(currentDimensions.padding, playButtonY)
 	end
-	
+
 	-- Check if server is down and gray out button accordingly
 	local isServerDown = selectedGame.status and selectedGame.status:lower() == "down"
 	if isServerDown then
@@ -896,7 +898,7 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		playButton.Text = isMobile and "🎮 Play" or "🎮 Play Game"
 		playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
-	
+
 	playButton.BorderSizePixel = 0
 	playButton.TextSize = isMobile and currentDimensions.textSize or currentDimensions.textSize + 2
 	playButton.Font = Enum.Font.GothamBold
@@ -923,7 +925,7 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		)
 		reportButton.Position = UDim2.fromOffset(currentDimensions.padding, reportButtonY)
 	end
-	
+
 	-- Gray out report button if server is already down
 	if isServerDown then
 		reportButton.BackgroundColor3 = Color3.fromRGB(120, 120, 120) -- Gray
@@ -934,7 +936,7 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		reportButton.Text = isMobile and "⚠️ Report Server Down" or "⚠️ ReportServer Down"
 		reportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
-	
+
 	reportButton.BorderSizePixel = 0
 	reportButton.TextSize = isMobile and currentDimensions.textSize - 1 or currentDimensions.textSize
 	reportButton.Font = Enum.Font.GothamBold
@@ -962,13 +964,11 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		-- Check if server is already marked as down
 		if selectedGame.status and selectedGame.status:lower() == "down" then
 			spawn(function()
-				showErrorMessage(
-					"This server is already marked as down by the admin. No need to report it again."
-				)
+				showErrorMessage("This server is already marked as down by the admin. No need to report it again.")
 			end)
 			return
 		end
-		
+
 		local currentTime = tick()
 
 		-- Create unique cooldown key per gamemode/part combination
@@ -1109,6 +1109,87 @@ if reportServerRemote then
 		end
 	end)
 end
+
+-- Function to create/show loading screen
+local function createLoadingGui()
+	if loadingGui then
+		loadingGui:Destroy()
+	end
+	
+	loadingGui = Instance.new("ScreenGui")
+	loadingGui.Name = "LoadingGui"
+	loadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	loadingGui.Parent = playerGui
+	
+	-- Background frame
+	local backgroundFrame = Instance.new("Frame")
+	backgroundFrame.Size = UDim2.new(1, 0, 1, 0)
+	backgroundFrame.Position = UDim2.new(0, 0, 0, 0)
+	backgroundFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	backgroundFrame.BackgroundTransparency = 0.5
+	backgroundFrame.BorderSizePixel = 0
+	backgroundFrame.Parent = loadingGui
+	
+	-- Loading frame
+	local loadingFrame = Instance.new("Frame")
+	loadingFrame.Size = UDim2.new(0, 300, 0, 100)
+	loadingFrame.Position = UDim2.new(0.5, -150, 0.5, -50)
+	loadingFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	loadingFrame.BorderSizePixel = 0
+	loadingFrame.Parent = backgroundFrame
+	
+	-- Add corner radius
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 12)
+	corner.Parent = loadingFrame
+	
+	-- Loading text
+	local loadingText = Instance.new("TextLabel")
+	loadingText.Size = UDim2.new(1, -20, 0, 30)
+	loadingText.Position = UDim2.new(0, 10, 0, 10)
+	loadingText.BackgroundTransparency = 1
+	loadingText.Text = "Loading Fresh Data..."
+	loadingText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	loadingText.TextScaled = true
+	loadingText.Font = Enum.Font.SourceSansBold
+	loadingText.Parent = loadingFrame
+	
+	-- Loading spinner (simple rotating element)
+	local spinner = Instance.new("Frame")
+	spinner.Size = UDim2.new(0, 40, 0, 40)
+	spinner.Position = UDim2.new(0.5, -20, 0, 50)
+	spinner.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+	spinner.BorderSizePixel = 0
+	spinner.Parent = loadingFrame
+	
+	local spinnerCorner = Instance.new("UICorner")
+	spinnerCorner.CornerRadius = UDim.new(0.5, 0)
+	spinnerCorner.Parent = spinner
+	
+	-- Animate spinner
+	local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1)
+	local tween = TweenService:Create(spinner, tweenInfo, {Rotation = 360})
+	tween:Play()
+	
+	return loadingGui
+end
+
+-- Function to hide loading screen
+local function hideLoadingGui()
+	if loadingGui then
+		loadingGui:Destroy()
+		loadingGui = nil
+	end
+end
+
+-- Handle loading screen show/hide
+showLoadingRemote.OnClientEvent:Connect(function(show)
+	if show then
+		createLoadingGui()
+	else
+		hideLoadingGui()
+	end
+end)
 
 print("Teleportation client system loaded!")
 print("[TP Client Debug] Client script initialization complete")

@@ -7,11 +7,15 @@
  * 2. Replace SHEET_ID with your Google Sheet ID
  * 3. Deploy this script as a web app with execute permissions for "Anyone"
  * 4. Copy the deployment URL and use it in your Roblox server script
+ * 5. Run the setupAutoTimestamps() function once to enable automatic Last Updated timestamps
  * 
  * Column Descriptions:
  * - Status: Admin-controlled server status (Online/Down/Maintenance) - READ ONLY for game
- * - Last Updated: Admin update timestamp - READ ONLY for game  
+ * - Last Updated: Admin update timestamp - AUTOMATICALLY UPDATED when TP-URL or DC-URL changes
  * - Last Down Vote: Player report timestamp - UPDATED by game when players report
+ * 
+ * Automatic Features:
+ * - Last Updated column automatically updates when you edit TP-URL or DC-URL columns
  */
 
 // Configuration
@@ -391,4 +395,89 @@ function formatSheet() {
   sheet.setFrozenRows(1);
   
   console.log('Sheet formatted successfully!');
+}
+
+/**
+ * Automatic timestamp update when TP-URL or DC-URL columns are edited
+ * This function runs automatically when any cell is edited in the sheet
+ */
+function onEdit(e) {
+  try {
+    const sheet = e.source.getActiveSheet();
+    const range = e.range;
+    
+    // Only process edits in the target sheet
+    if (sheet.getName() !== SHEET_NAME) {
+      return;
+    }
+    
+    // Get the headers to find column indices
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    // Find column indices for TP-URL, DC-URL, and Last Updated
+    const tpUrlIndex = headers.findIndex(h => h.toString().toLowerCase().includes('tp') && h.toString().toLowerCase().includes('url'));
+    const dcUrlIndex = headers.findIndex(h => h.toString().toLowerCase().includes('dc') && h.toString().toLowerCase().includes('url'));
+    const lastUpdatedIndex = headers.findIndex(h => h.toString().toLowerCase().includes('last') && h.toString().toLowerCase().includes('updated'));
+    
+    // If Last Updated column doesn't exist, exit
+    if (lastUpdatedIndex === -1) {
+      return;
+    }
+    
+    // Check if the edited cell is in TP-URL or DC-URL column
+    const editedColumn = range.getColumn() - 1; // Convert to 0-based index
+    const editedRow = range.getRow();
+    
+    // Only update if editing TP-URL or DC-URL columns (and not the header row)
+    if (editedRow > 1 && (editedColumn === tpUrlIndex || editedColumn === dcUrlIndex)) {
+      // Update the Last Updated cell for this row
+      const lastUpdatedCell = sheet.getRange(editedRow, lastUpdatedIndex + 1); // Convert back to 1-based
+      lastUpdatedCell.setValue(new Date());
+      
+      console.log(`Auto-updated Last Updated timestamp for row ${editedRow} after ${editedColumn === tpUrlIndex ? 'TP-URL' : 'DC-URL'} change`);
+    }
+    
+  } catch (error) {
+    console.error('Error in onEdit function:', error);
+  }
+}
+
+/**
+ * Setup function to enable automatic timestamp updates
+ * Run this function once to ensure the onEdit trigger is properly configured
+ */
+function setupAutoTimestamps() {
+  try {
+    console.log('Setting up automatic timestamp updates...');
+    
+    // The onEdit function will automatically trigger when cells are edited
+    // No additional trigger setup needed for simple onEdit functions
+    
+    // Test the column detection
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    const tpUrlIndex = headers.findIndex(h => h.toString().toLowerCase().includes('tp') && h.toString().toLowerCase().includes('url'));
+    const dcUrlIndex = headers.findIndex(h => h.toString().toLowerCase().includes('dc') && h.toString().toLowerCase().includes('url'));
+    const lastUpdatedIndex = headers.findIndex(h => h.toString().toLowerCase().includes('last') && h.toString().toLowerCase().includes('updated'));
+    
+    console.log('Column detection results:');
+    console.log(`TP-URL column: ${tpUrlIndex !== -1 ? headers[tpUrlIndex] + ' (index ' + tpUrlIndex + ')' : 'NOT FOUND'}`);
+    console.log(`DC-URL column: ${dcUrlIndex !== -1 ? headers[dcUrlIndex] + ' (index ' + dcUrlIndex + ')' : 'NOT FOUND'}`);
+    console.log(`Last Updated column: ${lastUpdatedIndex !== -1 ? headers[lastUpdatedIndex] + ' (index ' + lastUpdatedIndex + ')' : 'NOT FOUND'}`);
+    
+    if (tpUrlIndex === -1 || dcUrlIndex === -1 || lastUpdatedIndex === -1) {
+      console.warn('⚠️ Some required columns were not found. Please check your column headers.');
+      return false;
+    }
+    
+    console.log('✅ Automatic timestamp updates are now active!');
+    console.log('💡 Edit any TP-URL or DC-URL cell and the Last Updated column will automatically update.');
+    
+    return true;
+    
+  } catch (error) {
+    console.error('Error setting up automatic timestamps:', error);
+    return false;
+  }
 }

@@ -56,6 +56,10 @@ local reportServerRemote = Instance.new("RemoteEvent")
 reportServerRemote.Name = "ReportServer"
 reportServerRemote.Parent = remoteEvents
 
+local showLoadingRemote = Instance.new("RemoteEvent")
+showLoadingRemote.Name = "ShowLoading"
+showLoadingRemote.Parent = remoteEvents
+
 -- Cache for game data
 local gameDataCache = {}
 local lastCacheUpdate = 0
@@ -296,8 +300,25 @@ local function onPartTouched(hit, part)
 
 	Config.debugLog("Player " .. player.Name .. " touched teleport part: " .. partKey)
 
-	local gameData = findGameDataByKey(partKey)
-	Config.debugLog("Game data found for " .. partKey .. ": " .. tostring(gameData ~= nil))
+	-- Show loading screen to player immediately
+	showLoadingRemote:FireClient(player, true, "Loading game data...")
+
+	-- Always fetch fresh data from Google Sheets (no caching)
+	Config.debugLog("Fetching fresh game data for player: " .. player.Name)
+	local freshGameData = fetchGameData()
+	
+	-- Find game data for this specific part
+	local gameData = nil
+	if freshGameData then
+		for _, gameGroup in ipairs(freshGameData) do
+			if gameGroup.part_key == partKey then
+				gameData = gameGroup
+				break
+			end
+		end
+	end
+	
+	Config.debugLog("Fresh game data found for " .. partKey .. ": " .. tostring(gameData ~= nil))
 
 	if gameData then
 		Config.debugLog("Game data has games: " .. tostring(gameData.games ~= nil))
@@ -329,8 +350,12 @@ local function onPartTouched(hit, part)
 
 		-- Send game array directly to client to show GUI
 		showTpGuiRemote:FireClient(player, gamesArray)
-		Config.debugLog("Sent game data to client for: " .. partKey .. " with " .. #gamesArray .. " game modes")
+		-- Hide loading screen
+		showLoadingRemote:FireClient(player, false)
+		Config.debugLog("Sent fresh game data to client for: " .. partKey .. " with " .. #gamesArray .. " game modes")
 	else
+		-- Hide loading screen and show error
+		showLoadingRemote:FireClient(player, false)
 		warn("No game data found for part_key: " .. partKey)
 	end
 end
