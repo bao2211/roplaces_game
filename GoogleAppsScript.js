@@ -10,8 +10,8 @@
  */
 
 // Configuration
-const SHEET_ID = 'YOUR_GOOGLE_SHEET_ID_HERE'; // Replace with your actual Google Sheet ID
-const SHEET_NAME = 'Sheet1'; // Replace with your sheet name if different
+const SHEET_ID = '1mIeT4PzQMZF0OfeEEvq9PJWq4i__udt3CRNYEy3-fPg'; // Replace with your actual Google Sheet ID
+const SHEET_NAME = 'Page1'; // Replace with your sheet name if different
 
 /**
  * Main function to handle GET requests
@@ -131,7 +131,8 @@ function doPost(e) {
       case 'get_game':
         return getSpecificGame(requestData.part_key);
       case 'update_server_down':
-        return updateServerDown(requestData.part_key);
+        // Pass game_title if provided for precise row matching
+        return updateServerDown(requestData.part_key, requestData.game_title);
       default:
         throw new Error('Invalid action: ' + action);
     }
@@ -241,57 +242,61 @@ function updateServerDown(partKey, gameTitle = null) {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
-  
-  // Find the row with matching part_key and optionally game title
+
+  // Find the row with matching part_key and (if provided) game title
   let rowIndex = -1;
+  const partKeyIndex = headers.findIndex(h => h.toString().toLowerCase().includes('part'));
+  const titleIndex = headers.findIndex(h => h.toString().toLowerCase().includes('title'));
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === partKey) { // Assuming part_key is in first column
-      // If gameTitle is specified, match it too (for multiple games per part_key)
-      if (gameTitle) {
-        const titleIndex = headers.findIndex(h => h.toString().toLowerCase().includes('title'));
-        if (titleIndex !== -1 && data[i][titleIndex] === gameTitle) {
-          rowIndex = i + 1; // Sheet rows are 1-indexed
-          break;
-        }
-      } else {
-        // If no gameTitle specified, use first match
-        rowIndex = i + 1; // Sheet rows are 1-indexed
-        break;
-      }
+    const rowPartKey = data[i][partKeyIndex];
+    const rowTitle = titleIndex !== -1 ? data[i][titleIndex] : null;
+    if (
+      rowPartKey === partKey &&
+      (gameTitle === null || (rowTitle && rowTitle.toString() === gameTitle))
+    ) {
+      rowIndex = i + 1; // 1-based index for Sheets
+      break;
     }
   }
-  
+
   if (rowIndex === -1) {
-    const errorMsg = gameTitle 
-      ? `Game with part_key "${partKey}" and title "${gameTitle}" not found`
-      : `Game with part_key "${partKey}" not found`;
-    throw new Error(errorMsg);
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        message: 'No matching game found for part_key and title'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-  
+
   // Find server_down column index
   const serverDownIndex = headers.findIndex(h => h.toString().toLowerCase().includes('server') && h.toString().toLowerCase().includes('down'));
   if (serverDownIndex === -1) {
-    throw new Error('Server Down column not found');
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        message: 'No server_down column found'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-  
+
   // Get current server_down value and increment it
   const currentValue = Number(data[rowIndex - 1][serverDownIndex]) || 0;
   const newValue = currentValue + 1;
-  
+
   // Update the cell
   sheet.getRange(rowIndex, serverDownIndex + 1).setValue(newValue);
-  
+
   // Update last_updated timestamp
   const lastUpdatedIndex = headers.findIndex(h => h.toString().toLowerCase().includes('updated'));
   if (lastUpdatedIndex !== -1) {
     sheet.getRange(rowIndex, lastUpdatedIndex + 1).setValue(new Date());
   }
-  
+
   const logMsg = gameTitle 
     ? `Updated server_down count for ${partKey} (${gameTitle}) to ${newValue}`
     : `Updated server_down count for ${partKey} to ${newValue}`;
   console.log(logMsg);
-  
+
   return ContentService
     .createTextOutput(JSON.stringify({
       success: true,

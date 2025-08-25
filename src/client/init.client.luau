@@ -21,7 +21,8 @@ print("[TP Client Debug] TeleportFailed:", teleportFailedRemote)
 -- Variables
 local teleportGui = nil
 local currentTeleportData = nil
-local lastReportTime = 0 -- Track last report time for cooldown
+local selectedGame = nil -- Track the currently selected game globally
+local reportCooldowns = {} -- Track cooldown per gamemode/part: [partKey_tpUrl] = lastReportTime
 local REPORT_COOLDOWN = 30 * 60 -- 30 minutes in seconds
 
 -- Mobile detection
@@ -247,12 +248,22 @@ local function createTeleportGui()
 end
 
 -- Function to update GUI content for selected game
-local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDimensions)
+local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, currentDimensions)
+	-- Update the global selectedGame variable
+	selectedGame = newSelectedGame
 	-- Clear existing content (except close button)
 	for _, child in pairs(backgroundFrame:GetChildren()) do
 		if child.Name ~= "CloseButton" and child.Name ~= "Shadow" and not child:IsA("UICorner") then
 			child:Destroy()
 		end
+	end
+
+	-- Remove any old play/report button references to avoid duplicate connections
+	if backgroundFrame:FindFirstChild("PlayButton") then
+		backgroundFrame.PlayButton:Destroy()
+	end
+	if backgroundFrame:FindFirstChild("ReportButton") then
+		backgroundFrame.ReportButton:Destroy()
 	end
 
 	-- Main content area (scrollable on mobile)
@@ -824,7 +835,6 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 			UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.buttonHeight)
 		playButton.Position = UDim2.fromOffset(currentDimensions.padding, playButtonY)
 	end
-	-- Different colors for mobile vs desktop
 	playButton.BackgroundColor3 = isMobile and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(40, 167, 69)
 	playButton.BorderSizePixel = 0
 	playButton.Text = isMobile and "🎮 Play" or "🎮 Play Game"
@@ -841,7 +851,7 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	local reportButton = Instance.new("TextButton")
 	reportButton.Name = "ReportButton"
 	if isMobile then
-		reportButton.Size = UDim2.new(1, -16, 0, currentDimensions.buttonHeight * 0.8) -- Slightly smaller height
+		reportButton.Size = UDim2.new(1, -16, 0, currentDimensions.buttonHeight * 0.8)
 		reportButton.Position = UDim2.fromOffset(8, currentY)
 		currentY = currentY + (currentDimensions.buttonHeight * 0.8) + 10
 	else
@@ -866,37 +876,44 @@ local function updateGuiForSelectedGame(backgroundFrame, selectedGame, currentDi
 	reportCorner.CornerRadius = UDim.new(0, isMobile and 6 or 8)
 	reportCorner.Parent = reportButton
 
-	-- Button click handlers
+	-- Button click handlers (always use latest selectedGame)
 	playButton.MouseButton1Click:Connect(function()
-		-- Request teleportation with the selected game's teleport URL, part key, and title
 		teleportPlayerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
 	end)
 
 	reportButton.MouseButton1Click:Connect(function()
-		-- Check cooldown
 		local currentTime = tick()
+
+		-- Create unique cooldown key per gamemode/part combination
+		local cooldownKey = selectedGame.partKey .. "_" .. selectedGame.tp_url
+		local lastReportTime = reportCooldowns[cooldownKey] or 0
 		local timeSinceLastReport = currentTime - lastReportTime
 
 		if timeSinceLastReport < REPORT_COOLDOWN then
-			-- Still on cooldown
 			local timeLeft = REPORT_COOLDOWN - timeSinceLastReport
 			local minutesLeft = math.ceil(timeLeft / 60)
-
 			spawn(function()
 				showErrorMessage(
-					"You can report again in " .. minutesLeft .. " minutes. Please wait before reporting again."
+					"You can report "
+						.. selectedGame.title
+						.. " again in "
+						.. minutesLeft
+						.. " minutes. You can still report other gamemodes."
 				)
 			end)
 			return
 		end
-
-		-- Send report to server
+		print("[TP Client Debug] (Before report) selectedGame.title:", selectedGame and selectedGame.title)
+		print("[TP Client Debug] Reporting server down with values:")
+		print("tp_url:", selectedGame and selectedGame.tp_url)
+		print("partKey:", selectedGame and selectedGame.partKey)
+		print("title:", selectedGame and selectedGame.title)
+		print("[TP Client Debug] Cooldown key:", cooldownKey)
 		reportServerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
 
-		-- Update last report time
-		lastReportTime = currentTime
+		-- Update cooldown for this specific gamemode/part combination
+		reportCooldowns[cooldownKey] = currentTime
 
-		-- Show success message
 		spawn(function()
 			showSuccessMessage(
 				"Server report sent successfully! Admin will update this teleport link soon. Thank you for helping improve our service."
@@ -918,9 +935,8 @@ local function showTeleportGui(teleportData)
 	print("[TP Client Debug] teleportData:", teleportData)
 
 	currentTeleportData = teleportData
-
-	-- Use first game as default selection
-	local selectedGame = teleportData[1]
+	-- Use first game as default selection and set global selectedGame
+	selectedGame = teleportData[1]
 	print("[TP Client Debug] Selected game:", selectedGame.title)
 
 	-- Create the GUI

@@ -66,7 +66,7 @@ local playersOnParts = {} -- Track which players are currently on teleport parts
 local COOLDOWN_DURATION = 3 -- seconds before player can trigger GUI again
 
 -- Server report cooldown system
-local playerReportCooldowns = {} -- Track report cooldowns per player
+local playerReportCooldowns = {} -- Track report cooldowns per player per gamemode/server
 local REPORT_COOLDOWN_DURATION = 30 * 60 -- 30 minutes in seconds
 
 -- Function to fetch game data from Google Sheets
@@ -141,11 +141,12 @@ local function findGameDataByKey(partKey)
 end
 
 -- Function to update server_down count for invalid games
-local function updateServerDownCount(partKey)
+local function updateServerDownCount(partKey, gameTitle)
 	local success, responseData = pcall(function()
 		local requestData = {
 			action = "update_server_down",
 			part_key = partKey,
+			game_title = gameTitle,
 		}
 
 		local httpResponse = HttpService:PostAsync(
@@ -157,35 +158,55 @@ local function updateServerDownCount(partKey)
 	end)
 
 	if success then
-		Config.debugLog("Updated server_down count for: " .. partKey)
+		Config.debugLog("Updated server_down count for: " .. partKey .. " (" .. tostring(gameTitle) .. ")")
 	else
-		warn("Failed to update server_down count for: " .. partKey .. " - Error: " .. tostring(responseData))
+		warn(
+			"Failed to update server_down count for: "
+				.. partKey
+				.. " ("
+				.. tostring(gameTitle)
+				.. ") - Error: "
+				.. tostring(responseData)
+		)
 	end
 end
 
 -- Function to handle server reports from players
-local function onServerReport(player, tpUrl, partKey, gameTitle)
+
+function onServerReport(player, tpUrl, partKey, gameTitle)
 	local playerKey = player.UserId
 	local currentTime = tick()
+	local reportKey = tostring(player.UserId) .. "_" .. tostring(partKey) .. "_" .. tostring(tpUrl)
 
-	-- Check if player is on cooldown
-	if playerReportCooldowns[playerKey] then
-		local timeSinceLastReport = currentTime - playerReportCooldowns[playerKey]
+	-- Debug print: show what is being received and used for cooldown
+	print("[TP Server Debug] onServerReport called with:")
+	print("tpUrl:", tpUrl)
+	print("partKey:", partKey)
+	print("gameTitle:", gameTitle)
+	print("reportKey:", reportKey)
+
+	-- Check if player is on cooldown for this gamemode/server
+	if playerReportCooldowns[reportKey] then
+		local timeSinceLastReport = currentTime - playerReportCooldowns[reportKey]
 		if timeSinceLastReport < REPORT_COOLDOWN_DURATION then
-			-- Player is still on cooldown
+			-- Player is still on cooldown for this gamemode/server
 			local timeLeft = REPORT_COOLDOWN_DURATION - timeSinceLastReport
 			local minutesLeft = math.ceil(timeLeft / 60)
 
 			Config.debugLog(
-				"Player " .. player.Name .. " tried to report but is on cooldown for " .. minutesLeft .. " more minutes"
+				"Player "
+					.. player.Name
+					.. " tried to report but is on cooldown for this gamemode/server for "
+					.. minutesLeft
+					.. " more minutes"
 			)
 			-- Could send error back to client if needed
 			return
 		end
 	end
 
-	-- Set cooldown for this player
-	playerReportCooldowns[playerKey] = currentTime
+	-- Set cooldown for this player for this gamemode/server
+	playerReportCooldowns[reportKey] = currentTime
 
 	Config.debugLog(
 		"Player "
@@ -197,8 +218,8 @@ local function onServerReport(player, tpUrl, partKey, gameTitle)
 			.. ")"
 	)
 
-	-- Update server down count
-	updateServerDownCount(partKey)
+	-- Update server down count (now with gameTitle)
+	updateServerDownCount(partKey, gameTitle)
 
 	-- Log the report for admin tracking
 	print(
@@ -295,7 +316,7 @@ local function onPartTouched(hit, part)
 				partKey = gameData.part_key, -- Add partKey to each game for client reference
 				tp_url = GameData.sanitizeUrl(game.tp_url),
 				discordUrl = GameData.sanitizeUrl(game.dc_url), -- Rename to match client expectations
-				title = GameData.formatDisplayText(game.title, 30),
+				title = game.title, -- Use the full, original title for cooldown key uniqueness
 				active = game.active,
 				last_updated = game.last_updated,
 				server_down = game.server_down,
@@ -343,7 +364,7 @@ local function onTeleportPlayer(player, tpUrl, partKey, gameTitle)
 					"This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.",
 					partKey
 				)
-				updateServerDownCount(partKey)
+				updateServerDownCount(partKey, gameTitle)
 				return
 			end
 
@@ -365,7 +386,7 @@ local function onTeleportPlayer(player, tpUrl, partKey, gameTitle)
 						"This game has been removed or is no longer available. A request has been sent to admins to update this link. Please try other games.",
 						partKey
 					)
-					updateServerDownCount(partKey)
+					updateServerDownCount(partKey, gameTitle)
 				else
 					teleportFailedRemote:FireClient(player, "Failed to join game: " .. errorMessage, partKey)
 				end
