@@ -133,6 +133,32 @@ local function getGameData()
 	return gameDataCache
 end
 
+-- Function to update BillBoard decal with image from game data
+local function updateBillBoardDecal(part, imageUrl)
+	if not imageUrl or imageUrl == "" then
+		Config.debugLog("No image URL provided for BillBoard update")
+		return
+	end
+	
+	-- Find BillBoard part within the teleport part
+	local billBoard = part:FindFirstChild("BillBoard")
+	if not billBoard then
+		Config.debugLog("BillBoard part not found in: " .. part.Name)
+		return
+	end
+	
+	-- Find Decal within BillBoard
+	local decal = billBoard:FindFirstChildOfClass("Decal")
+	if not decal then
+		Config.debugLog("Decal not found in BillBoard of: " .. part.Name)
+		return
+	end
+	
+	-- Update decal texture with image URL
+	decal.Texture = imageUrl
+	Config.debugLog("Updated BillBoard decal for " .. part.Name .. " with image: " .. imageUrl)
+end
+
 -- Function to find game data by part key
 local function findGameDataByKey(partKey)
 	local data = getGameData()
@@ -348,6 +374,13 @@ local function onPartTouched(hit, part)
 			table.insert(gamesArray, sanitizedGame)
 		end
 
+		-- Update BillBoard decal with the first game's image (representative image for the part)
+		local firstGame = gameData.games[1]
+		if firstGame and firstGame.image_url then
+			local sanitizedImageUrl = GameData.sanitizeUrl(firstGame.image_url)
+			updateBillBoardDecal(part, sanitizedImageUrl)
+		end
+
 		-- Send game array directly to client to show GUI
 		showTpGuiRemote:FireClient(player, gamesArray)
 		-- Hide loading screen
@@ -557,9 +590,50 @@ Players.PlayerRemoving:Connect(function(player)
 	Config.debugLog("Cleaned up cooldown and part tracking data for player: " .. player.Name)
 end)
 
+-- Function to update all BillBoard decals with fresh game data
+local function updateAllBillBoardDecals()
+	local gameData = fetchGameData()
+	if not gameData then
+		Config.debugLog("No game data available for BillBoard updates")
+		return
+	end
+	
+	-- Find all teleport parts in workspace
+	local function searchForTeleportParts(parent)
+		for _, child in ipairs(parent:GetChildren()) do
+			-- Check if this is a teleport part
+			local partType = child:GetAttribute("part_type")
+			local partKey = child:GetAttribute("part_key")
+			
+			if partType and string.find(partType, Config.PART_TYPE_KEYWORD) and partKey then
+				-- Find matching game data for this part
+				for _, gameGroup in ipairs(gameData) do
+					if gameGroup.part_key == partKey and gameGroup.games and #gameGroup.games > 0 then
+						-- Use first game's image as representative image for the part
+						local firstGame = gameGroup.games[1]
+						if firstGame and firstGame.image_url then
+							local sanitizedImageUrl = GameData.sanitizeUrl(firstGame.image_url)
+							updateBillBoardDecal(child, sanitizedImageUrl)
+						end
+						break
+					end
+				end
+			end
+			
+			-- Recursively search children
+			searchForTeleportParts(child)
+		end
+	end
+	
+	searchForTeleportParts(workspace)
+	Config.debugLog("Updated all BillBoard decals with fresh game data")
+end
+
 -- Initialize game data cache
 if Config.GOOGLE_SCRIPT_URL ~= "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" then
 	fetchGameData()
+	-- Update all BillBoard decals with initial game data
+	updateAllBillBoardDecals()
 	print("✅ Teleportation system initialized! Debug mode: " .. tostring(Config.DEBUG_MODE))
 else
 	warn("⚠️  CONFIGURATION NEEDED: Please configure your Google Apps Script URL in the Config module!")
