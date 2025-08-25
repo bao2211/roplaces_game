@@ -60,6 +60,10 @@ local showLoadingRemote = Instance.new("RemoteEvent")
 showLoadingRemote.Name = "ShowLoading"
 showLoadingRemote.Parent = remoteEvents
 
+local regeneratePartsRemote = Instance.new("RemoteEvent")
+regeneratePartsRemote.Name = "RegenerateParts"
+regeneratePartsRemote.Parent = remoteEvents
+
 -- Cache for game data
 local gameDataCache = {}
 local lastCacheUpdate = 0
@@ -629,9 +633,124 @@ local function updateAllBillBoardDecals()
 	Config.debugLog("Updated all BillBoard decals with fresh game data")
 end
 
+-- Function to automatically generate teleport parts based on Google Sheet data
+local function generateTeleportParts()
+	-- Find the template part
+	local templatePart = workspace:FindFirstChild("TP_Part")
+	if not templatePart then
+		warn("Template part 'TP_Part' not found in workspace!")
+		return
+	end
+	
+	-- Verify template part has correct attributes
+	local templatePartType = templatePart:GetAttribute("part_type")
+	if not templatePartType or templatePartType ~= "tp" then
+		warn("Template part 'TP_Part' missing or incorrect part_type attribute!")
+		return
+	end
+	
+	Config.debugLog("Found template part: " .. templatePart.Name)
+	
+	-- Fetch game data to get all unique part keys
+	local gameData = fetchGameData()
+	if not gameData then
+		Config.debugLog("No game data available for part generation")
+		return
+	end
+	
+	-- Get template part position for spacing
+	local spacing = 20 -- Distance between parts (adjust as needed)
+	local currentOffset = 0
+	
+	-- Track existing parts to avoid duplicates
+	local existingPartKeys = {}
+	
+	-- Check what part keys already exist
+	local function findExistingParts(parent)
+		for _, child in ipairs(parent:GetChildren()) do
+			local partType = child:GetAttribute("part_type")
+			local partKey = child:GetAttribute("part_key")
+			
+			if partType and string.find(partType, Config.PART_TYPE_KEYWORD) and partKey then
+				existingPartKeys[partKey] = true
+				Config.debugLog("Found existing part with key: " .. partKey)
+			end
+			
+			-- Recursively search children
+			findExistingParts(child)
+		end
+	end
+	
+	findExistingParts(workspace)
+	
+	-- Generate parts for each unique part_key in game data
+	for _, gameGroup in ipairs(gameData) do
+		local partKey = gameGroup.part_key
+		
+		if not existingPartKeys[partKey] then
+			-- Create new part for this part_key
+			local newPart = templatePart:Clone()
+			newPart.Name = "TP_Part_" .. partKey
+			newPart:SetAttribute("part_key", partKey)
+			newPart:SetAttribute("part_type", "tp")
+			
+			-- Parent to workspace first
+			newPart.Parent = workspace
+			
+			-- Calculate offset for positioning
+			currentOffset = currentOffset + spacing
+			local offsetVector = Vector3.new(currentOffset, 0, 0)
+			
+			-- Move the main part
+			newPart.CFrame = newPart.CFrame + offsetVector
+			
+			-- Move all child parts that are BaseParts
+			local function moveChildParts(parent)
+				for _, child in ipairs(parent:GetChildren()) do
+					if child:IsA("BasePart") then
+						child.CFrame = child.CFrame + offsetVector
+					end
+					-- Recursively check children of children
+					moveChildParts(child)
+				end
+			end
+			
+			-- Move all child parts
+			moveChildParts(newPart)
+			
+			Config.debugLog("Generated new teleport part: " .. newPart.Name .. " for part_key: " .. partKey)
+			Config.debugLog("Moved part and children by offset: " .. tostring(offsetVector))
+			
+			-- Mark this part_key as existing
+			existingPartKeys[partKey] = true
+		else
+			Config.debugLog("Part already exists for part_key: " .. partKey)
+		end
+	end
+	
+	Config.debugLog("Teleport part generation complete!")
+end
+
+-- Function to regenerate parts (can be called when Google Sheet is updated)
+local function regenerateTeleportParts()
+	Config.debugLog("Regenerating teleport parts from updated Google Sheet data...")
+	generateTeleportParts()
+	updateAllBillBoardDecals()
+	Config.debugLog("Teleport parts regeneration complete!")
+end
+
+-- Connect RemoteEvent for parts regeneration
+regeneratePartsRemote.OnServerEvent:Connect(function(player)
+	-- Only allow certain players to regenerate parts (optional security check)
+	Config.debugLog("Player " .. player.Name .. " requested parts regeneration")
+	regenerateTeleportParts()
+end)
+
 -- Initialize game data cache
 if Config.GOOGLE_SCRIPT_URL ~= "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" then
 	fetchGameData()
+	-- Generate teleport parts based on Google Sheet data
+	generateTeleportParts()
 	-- Update all BillBoard decals with initial game data
 	updateAllBillBoardDecals()
 	print("✅ Teleportation system initialized! Debug mode: " .. tostring(Config.DEBUG_MODE))
