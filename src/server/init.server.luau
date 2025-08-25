@@ -317,9 +317,10 @@ local function onPartTouched(hit, part)
 				tp_url = GameData.sanitizeUrl(game.tp_url),
 				discordUrl = GameData.sanitizeUrl(game.dc_url), -- Rename to match client expectations
 				title = game.title, -- Use the full, original title for cooldown key uniqueness
-				active = game.active,
-				last_updated = game.last_updated,
-				server_down = game.server_down,
+				status = game.status or "Unknown", -- New: Admin-controlled status
+				last_updated = game.last_updated or "", -- New: Admin update timestamp
+				last_down_vote = game.last_down_vote or "", -- New: Last player report timestamp
+				server_down = game.server_down or 0, -- Number of down reports
 				imageUrl = game.image_url and GameData.sanitizeUrl(game.image_url) or nil, -- Rename to match client expectations
 				description = game.description or "",
 			}

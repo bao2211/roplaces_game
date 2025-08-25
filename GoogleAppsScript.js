@@ -3,10 +3,15 @@
  * This script serves game data from a Google Sheet to your Roblox game
  * 
  * Setup Instructions:
- * 1. Create a new Google Sheet with columns: Part Key, TP-URL, DC-URL, Title, Active, Last Updated, Server Down, Image URL
+ * 1. Create a new Google Sheet with columns: Part Key, TP-URL, DC-URL, Title, Status, Last Updated, Last Down Vote, Server Down, Image URL, Description
  * 2. Replace SHEET_ID with your Google Sheet ID
  * 3. Deploy this script as a web app with execute permissions for "Anyone"
  * 4. Copy the deployment URL and use it in your Roblox server script
+ * 
+ * Column Descriptions:
+ * - Status: Admin-controlled server status (Online/Down/Maintenance) - READ ONLY for game
+ * - Last Updated: Admin update timestamp - READ ONLY for game  
+ * - Last Down Vote: Player report timestamp - UPDATED by game when players report
  */
 
 // Configuration
@@ -235,7 +240,7 @@ function addGameData(requestData) {
 }
 
 /**
- * Update server_down count for a specific game
+ * Update server_down count for a specific game and set Last Down Vote timestamp
  * Now supports updating specific game mode within a part_key
  */
 function updateServerDown(partKey, gameTitle = null) {
@@ -279,29 +284,33 @@ function updateServerDown(partKey, gameTitle = null) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // Find Last Down Vote column index
+  const lastDownVoteIndex = headers.findIndex(h => h.toString().toLowerCase().includes('last') && h.toString().toLowerCase().includes('down') && h.toString().toLowerCase().includes('vote'));
+
   // Get current server_down value and increment it
   const currentValue = Number(data[rowIndex - 1][serverDownIndex]) || 0;
   const newValue = currentValue + 1;
+  const currentDate = new Date();
 
-  // Update the cell
+  // Update the server_down count
   sheet.getRange(rowIndex, serverDownIndex + 1).setValue(newValue);
 
-  // Update last_updated timestamp
-  const lastUpdatedIndex = headers.findIndex(h => h.toString().toLowerCase().includes('updated'));
-  if (lastUpdatedIndex !== -1) {
-    sheet.getRange(rowIndex, lastUpdatedIndex + 1).setValue(new Date());
+  // Update Last Down Vote timestamp (when player reports)
+  if (lastDownVoteIndex !== -1) {
+    sheet.getRange(rowIndex, lastDownVoteIndex + 1).setValue(currentDate);
   }
 
   const logMsg = gameTitle 
-    ? `Updated server_down count for ${partKey} (${gameTitle}) to ${newValue}`
-    : `Updated server_down count for ${partKey} to ${newValue}`;
+    ? `Updated server_down count for ${partKey} (${gameTitle}) to ${newValue} and set Last Down Vote`
+    : `Updated server_down count for ${partKey} to ${newValue} and set Last Down Vote`;
   console.log(logMsg);
 
   return ContentService
     .createTextOutput(JSON.stringify({
       success: true,
-      message: 'Server down count updated successfully',
-      new_count: newValue
+      message: 'Server down count and Last Down Vote updated successfully',
+      new_count: newValue,
+      last_down_vote: currentDate.toLocaleDateString()
     }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -338,6 +347,7 @@ function testScript() {
 
 /**
  * Function to create sample data in the sheet (run once to set up)
+ * Updated to match new sheet structure with Status, Last Updated, Last Down Vote columns
  */
 function createSampleData() {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
@@ -345,22 +355,21 @@ function createSampleData() {
   // Clear existing data
   sheet.clear();
   
-  // Add headers
-  const headers = ['Part Key', 'TP-URL', 'DC-URL', 'Title', 'Active', 'Last Updated', 'Server Down', 'Image URL', 'Description'];
+  // Add headers matching your new structure
+  const headers = ['Part Key', 'TP-URL', 'DC-URL', 'Title', 'Status', 'Last Updated', 'Last Down Vote', 'Server Down', 'Image URL', 'Description'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   
   // Add sample data
   const sampleData = [
-    ['trlx_tp', 'https://www.roblox.com/games/123456789', 'https://discord.gg/trlx', 'TRLX Games - PvP', true, new Date(), 3, 'https://example.com/trlx-pvp.png', 'Experience intense PvP combat in the TRLX gaming universe with competitive matches and leaderboards.'],
-    ['trlx_tp', 'https://www.roblox.com/games/123456790', 'https://discord.gg/trlx', 'TRLX Games - Roleplay', true, new Date(), 0, 'https://example.com/trlx-rp.png', 'Immerse yourself in roleplay scenarios with custom characters and storylines in the TRLX universe.'],
-    ['hub_tp', 'https://www.roblox.com/games/987654321', 'https://discord.gg/hub', 'Gaming Hub - Main', true, new Date(), 0, 'https://example.com/hub.png', 'The central hub for all gaming activities. Meet other players and discover new games together.'],
-    ['hub_tp', 'https://www.roblox.com/games/987654322', 'https://discord.gg/hub', 'Gaming Hub - VIP', true, new Date(), 1, 'https://example.com/hub-vip.png', 'Exclusive VIP area with premium features and enhanced gameplay experience for members.'],
-    ['test_tp', 'https://www.roblox.com/games/555666777', 'https://discord.gg/test', 'Test Server', false, new Date(), 1, '', 'This is a test server for development and debugging purposes. Join to help test new features!']
+    ['trlx_tp', 'https://www.roblox.com/games/86148343932287/Foamy-Float-Frenzy-of-the-Neon-Lagoon', 'https://discord.gg/trlx', 'TRLX Con', 'Down', '25/08/2025', '25/08/2025', 1, 'rbxassetid://1044275350', 'This is a basic game where you can explore and have fun with friends. The admins of trlx are reliable users.'],
+    ['trlx_tp', 'https://www.roblox.com/games/109522154617015/UPDATE-rainbow-friends-battlegrounds', 'https://discord.gg/trlx', 'TRLX Die Of Seg Online', 'Online', '25/08/2025', '25/08/2025', 1, 'rbxassetid://1044275350', 'This is a new game mode with exciting features and challenges for players to enjoy.'],
+    ['hub_tp', 'https://www.roblox.com/games/987654321', 'https://discord.gg/hub', 'Gaming Hub - Main', 'Online', '25/08/2025', '', 0, '', 'The central hub for all gaming activities. Meet other players and discover new games together.'],
+    ['test_tp', 'https://www.roblox.com/games/555666777', 'https://discord.gg/test', 'Test Server', 'Maintenance', '25/08/2025', '24/08/2025', 2, '', 'This is a test server for development and debugging purposes. Join to help test new features!']
   ];
   
   sheet.getRange(2, 1, sampleData.length, sampleData[0].length).setValues(sampleData);
   
-  console.log('Sample data created successfully!');
+  console.log('Sample data created successfully with new column structure!');
 }
 
 /**

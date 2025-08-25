@@ -398,15 +398,57 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		titleLabel.Position = UDim2.fromOffset(currentDimensions.padding, 0)
 	end
 	titleLabel.BackgroundTransparency = 1
-	-- Clean professional title without debug indicators
-	titleLabel.Text = selectedGame.title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	-- Clean professional title with status indicator
+	local statusEmoji = "🟢" -- Default green
+	local statusColor = Color3.fromRGB(255, 255, 255) -- Default white
+
+	if selectedGame.status then
+		local status = selectedGame.status:lower()
+		if status == "down" or status == "offline" then
+			statusEmoji = "🔴"
+			statusColor = Color3.fromRGB(255, 100, 100) -- Light red
+		elseif status == "maintenance" or status == "updating" then
+			statusEmoji = "🟡"
+			statusColor = Color3.fromRGB(255, 255, 100) -- Light yellow
+		elseif status == "online" or status == "up" then
+			statusEmoji = "🟢"
+			statusColor = Color3.fromRGB(100, 255, 100) -- Light green
+		end
+	end
+
+	titleLabel.Text = statusEmoji .. " " .. selectedGame.title
+	titleLabel.TextColor3 = statusColor
 	titleLabel.TextSize = currentDimensions.titleSize
 	titleLabel.TextXAlignment = isMobile and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
 	titleLabel.TextYAlignment = Enum.TextYAlignment.Top
 	titleLabel.TextWrapped = true
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.Parent = contentFrame
+
+	-- Status info label (small text below title)
+	if selectedGame.status then
+		local statusLabel = Instance.new("TextLabel")
+		statusLabel.Name = "StatusLabel"
+		if isMobile then
+			statusLabel.Size = UDim2.new(1, -16, 0, 20)
+			statusLabel.Position = UDim2.fromOffset(8, currentY)
+			currentY = currentY + 25
+		else
+			statusLabel.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 20)
+			statusLabel.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 10)
+		end
+		statusLabel.BackgroundTransparency = 1
+		local statusText = "Server Status: " .. selectedGame.status
+		if selectedGame.last_updated and selectedGame.last_updated ~= "" then
+			statusText = statusText .. " • Last Updated: " .. selectedGame.last_updated
+		end
+		statusLabel.Text = statusText
+		statusLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+		statusLabel.TextSize = currentDimensions.textSize - 4
+		statusLabel.TextXAlignment = isMobile and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
+		statusLabel.Font = Enum.Font.Gotham
+		statusLabel.Parent = contentFrame
+	end
 
 	-- Instruction text (compact on mobile)
 	local instructionLabel = Instance.new("TextLabel")
@@ -417,7 +459,9 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		currentY = currentY + 35
 	else
 		instructionLabel.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 40)
-		instructionLabel.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 20)
+		-- Adjust position to account for status label if present
+		local yOffset = selectedGame.status and (currentDimensions.titleSize + 40) or (currentDimensions.titleSize + 20)
+		instructionLabel.Position = UDim2.fromOffset(currentDimensions.padding, yOffset)
 	end
 	instructionLabel.BackgroundTransparency = 1
 	-- Clean professional instruction text
@@ -441,7 +485,10 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		currentY = currentY + 70
 	else
 		discordFrame.Size = UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, 100)
-		discordFrame.Position = UDim2.fromOffset(currentDimensions.padding, currentDimensions.titleSize + 80)
+		-- Adjust position to account for status label if present
+		local yOffset = selectedGame.status and (currentDimensions.titleSize + 120)
+			or (currentDimensions.titleSize + 80)
+		discordFrame.Position = UDim2.fromOffset(currentDimensions.padding, yOffset)
 	end
 	discordFrame.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
 	discordFrame.BorderSizePixel = 0
@@ -609,7 +656,9 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 	end
 
 	-- Gamemode selector (if multiple games available) - mobile responsive
-	local gamemodeY = isMobile and currentY or currentDimensions.titleSize + 200
+	-- Adjust position to account for status label if present
+	local gamemodeY = isMobile and currentY
+		or (selectedGame.status and (currentDimensions.titleSize + 240) or (currentDimensions.titleSize + 200))
 	if currentTeleportData and #currentTeleportData > 1 then
 		if isMobile then
 			-- Mobile: Horizontal scrollable button list
@@ -835,10 +884,20 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 			UDim2.new(1, hasImage and -currentDimensions.sidebarWidth - 20 or -20, 0, currentDimensions.buttonHeight)
 		playButton.Position = UDim2.fromOffset(currentDimensions.padding, playButtonY)
 	end
-	playButton.BackgroundColor3 = isMobile and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(40, 167, 69)
+	
+	-- Check if server is down and gray out button accordingly
+	local isServerDown = selectedGame.status and selectedGame.status:lower() == "down"
+	if isServerDown then
+		playButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100) -- Gray
+		playButton.Text = isMobile and "🚫 Server Down" or "🚫 Server Down - Cannot Play"
+		playButton.TextColor3 = Color3.fromRGB(200, 200, 200) -- Light gray text
+	else
+		playButton.BackgroundColor3 = isMobile and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(40, 167, 69)
+		playButton.Text = isMobile and "🎮 Play" or "🎮 Play Game"
+		playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
+	
 	playButton.BorderSizePixel = 0
-	playButton.Text = isMobile and "🎮 Play" or "🎮 Play Game"
-	playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	playButton.TextSize = isMobile and currentDimensions.textSize or currentDimensions.textSize + 2
 	playButton.Font = Enum.Font.GothamBold
 	playButton.Parent = contentFrame
@@ -864,10 +923,19 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 		)
 		reportButton.Position = UDim2.fromOffset(currentDimensions.padding, reportButtonY)
 	end
-	reportButton.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+	
+	-- Gray out report button if server is already down
+	if isServerDown then
+		reportButton.BackgroundColor3 = Color3.fromRGB(120, 120, 120) -- Gray
+		reportButton.Text = isMobile and "⚫ Already Reported" or "⚫ Server Already Down"
+		reportButton.TextColor3 = Color3.fromRGB(200, 200, 200) -- Light gray text
+	else
+		reportButton.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+		reportButton.Text = isMobile and "⚠️ Report Server Down" or "⚠️ ReportServer Down"
+		reportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
+	
 	reportButton.BorderSizePixel = 0
-	reportButton.Text = isMobile and "⚠️ Report Server Down" or "⚠️ ReportServer Down"
-	reportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	reportButton.TextSize = isMobile and currentDimensions.textSize - 1 or currentDimensions.textSize
 	reportButton.Font = Enum.Font.GothamBold
 	reportButton.Parent = contentFrame
@@ -878,10 +946,29 @@ local function updateGuiForSelectedGame(backgroundFrame, newSelectedGame, curren
 
 	-- Button click handlers (always use latest selectedGame)
 	playButton.MouseButton1Click:Connect(function()
+		-- Check if server is down before allowing teleport
+		if selectedGame.status and selectedGame.status:lower() == "down" then
+			spawn(function()
+				showErrorMessage(
+					"This server is currently down and unavailable. Please try a different gamemode or check back later."
+				)
+			end)
+			return
+		end
 		teleportPlayerRemote:FireServer(selectedGame.tp_url, selectedGame.partKey, selectedGame.title)
 	end)
 
 	reportButton.MouseButton1Click:Connect(function()
+		-- Check if server is already marked as down
+		if selectedGame.status and selectedGame.status:lower() == "down" then
+			spawn(function()
+				showErrorMessage(
+					"This server is already marked as down by the admin. No need to report it again."
+				)
+			end)
+			return
+		end
+		
 		local currentTime = tick()
 
 		-- Create unique cooldown key per gamemode/part combination

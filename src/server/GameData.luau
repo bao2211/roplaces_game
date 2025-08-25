@@ -9,9 +9,10 @@ export type GameInfo = {
 	tp_url: string, -- Roblox game URL for teleportation
 	dc_url: string, -- Discord server invite URL
 	title: string, -- Game/Server title
-	active: boolean, -- Whether the game is currently active
-	last_updated: string, -- Last update timestamp
-	server_down: number, -- Server status (0 = up, 1 = down, etc.)
+	status: string, -- Server status (read-only, updated by admin)
+	last_updated: string, -- Last admin update timestamp (read-only, updated by admin)
+	last_down_vote: string, -- Last player report timestamp (updated by game)
+	server_down: number, -- Number of server down reports
 	image_url: string?, -- Optional image URL
 	description: string?, -- Optional game description
 }
@@ -22,10 +23,11 @@ GameData.ExampleData = {
 	tp_url = "https://www.roblox.com/games/123456789",
 	dc_url = "https://discord.gg/trlx",
 	title = "TRLX Games",
-	active = true,
-	last_updated = "08/21/2025, 20:3",
-	server_down = 3,
-	image_url = "https://example.com/image.png",
+	status = "Online", -- Admin-controlled status
+	last_updated = "25/08/2025", -- Admin update date
+	last_down_vote = "25/08/2025", -- Last player report date
+	server_down = 1, -- Number of reports
+	image_url = "rbxassetid://1044275350",
 	description = "Experience amazing adventures in the TRLX gaming universe with friends and explore countless worlds.",
 }
 
